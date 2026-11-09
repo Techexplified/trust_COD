@@ -12,30 +12,30 @@ export default function Index() {
   const [appEmbedEnabled, setAppEmbedEnabled] = useState(true);
   const [showModal, setShowModal] = useState(true);
 
+  // Clear any previous stale dismissal flag so the modal doesn't auto-close
   useEffect(() => {
     try {
-      if (sessionStorage.getItem("trust_cod_modal_dismissed") === "true") {
-        setShowModal(false);
-      }
+      sessionStorage.removeItem("trust_cod_modal_dismissed");
     } catch {
       // ignore storage access issues
     }
   }, []);
 
   const handleCloseModal = () => {
-    try {
-      sessionStorage.setItem("trust_cod_modal_dismissed", "true");
-    } catch {
-      // ignore storage access issues
-    }
     setShowModal(false);
+  };
+
+  const handleOverlayClick = (e) => {
+    if (e.target === e.currentTarget) {
+      handleCloseModal();
+    }
   };
 
   return (
     <s-page heading="Trust COD">
       {/* ── COD Losses Prevention Modal (Appears once when page opens) ── */}
       {showModal && (
-        <div className={styles.modalOverlay} onClick={handleCloseModal}>
+        <div className={styles.modalOverlay} onClick={handleOverlayClick}>
           <div
             className={styles.modalCard}
             onClick={(e) => e.stopPropagation()}
