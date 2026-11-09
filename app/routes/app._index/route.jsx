@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../../shopify.server";
 import styles from "./styles.module.css";
@@ -10,9 +10,231 @@ export const loader = async ({ request }) => {
 
 export default function Index() {
   const [appEmbedEnabled, setAppEmbedEnabled] = useState(true);
+  const [showModal, setShowModal] = useState(true);
+
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem("trust_cod_modal_dismissed") === "true") {
+        setShowModal(false);
+      }
+    } catch {
+      // ignore storage access issues
+    }
+  }, []);
+
+  const handleCloseModal = () => {
+    try {
+      sessionStorage.setItem("trust_cod_modal_dismissed", "true");
+    } catch {
+      // ignore storage access issues
+    }
+    setShowModal(false);
+  };
 
   return (
     <s-page heading="Trust COD">
+      {/* ── COD Losses Prevention Modal (Appears once when page opens) ── */}
+      {showModal && (
+        <div className={styles.modalOverlay} onClick={handleCloseModal}>
+          <div
+            className={styles.modalCard}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+          >
+            {/* Close button */}
+            <button
+              className={styles.modalClose}
+              onClick={handleCloseModal}
+              aria-label="Close"
+            >
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <path
+                  d="M15 5L5 15M5 5l10 10"
+                  stroke="#6b7280"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+
+            {/* Modal content layout */}
+            <div className={styles.modalBody}>
+              <div className={styles.modalLeft}>
+                {/* Header with chart icon */}
+                <div className={styles.modalHeader}>
+                  <div className={styles.modalChartIcon}>
+                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                      <rect x="3" y="11" width="3.5" height="7" rx="1" fill="#16a34a" />
+                      <rect x="8.5" y="7" width="3.5" height="11" rx="1" fill="#16a34a" />
+                      <rect x="14" y="3" width="3.5" height="15" rx="1" fill="#16a34a" />
+                    </svg>
+                  </div>
+                  <span className={styles.modalHeaderText}>
+                    In the last 60 days,
+                  </span>
+                </div>
+
+                {/* Title */}
+                <h2 className={styles.modalTitle}>
+                  You could have prevented
+                  <br />
+                  these COD losses
+                </h2>
+
+                {/* Description */}
+                <p className={styles.modalDesc}>
+                  Based on your store&apos;s COD orders, here&apos;s what our app could
+                  have helped you identify and prevent.
+                </p>
+
+                {/* Stats row */}
+                <div className={styles.statsRow}>
+                  {/* Stat 1 - COD orders scanned */}
+                  <div className={styles.statCard}>
+                    <div className={`${styles.statIcon} ${styles.statIconGreen}`}>
+                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                        <rect x="3" y="2" width="14" height="16" rx="2" stroke="#16a34a" strokeWidth="1.6" />
+                        <line x1="6" y1="6" x2="8" y2="6" stroke="#16a34a" strokeWidth="1.6" strokeLinecap="round" />
+                        <line x1="10" y1="6" x2="14" y2="6" stroke="#16a34a" strokeWidth="1.6" strokeLinecap="round" />
+                        <line x1="6" y1="10" x2="8" y2="10" stroke="#16a34a" strokeWidth="1.6" strokeLinecap="round" />
+                        <line x1="10" y1="10" x2="14" y2="10" stroke="#16a34a" strokeWidth="1.6" strokeLinecap="round" />
+                        <line x1="6" y1="14" x2="8" y2="14" stroke="#16a34a" strokeWidth="1.6" strokeLinecap="round" />
+                        <line x1="10" y1="14" x2="12" y2="14" stroke="#16a34a" strokeWidth="1.6" strokeLinecap="round" />
+                      </svg>
+                    </div>
+                    <div className={styles.statContent}>
+                      <span className={styles.statLabel}>
+                        COD orders scanned
+                      </span>
+                      <span className={styles.statValue}>1,240</span>
+                    </div>
+                  </div>
+
+                  {/* Stat 2 - High or medium risk */}
+                  <div className={styles.statCard}>
+                    <div className={`${styles.statIcon} ${styles.statIconAmber}`}>
+                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                        <path
+                          d="M10 2.5L1.8 16.5C1.6 16.8 1.8 17.5 2.3 17.5H17.7C18.2 17.5 18.4 16.8 18.2 16.5L10 2.5Z"
+                          fill="#fef3c7"
+                          stroke="#f59e0b"
+                          strokeWidth="1.6"
+                          strokeLinejoin="round"
+                        />
+                        <line x1="10" y1="8" x2="10" y2="11.5" stroke="#f59e0b" strokeWidth="1.8" strokeLinecap="round" />
+                        <circle cx="10" cy="14.5" r="0.9" fill="#f59e0b" />
+                      </svg>
+                    </div>
+                    <div className={styles.statContent}>
+                      <span className={styles.statLabel}>
+                        Would have been high
+                        <br />
+                        or medium risk
+                      </span>
+                      <span className={styles.statValue}>420</span>
+                    </div>
+                  </div>
+
+                  {/* Stat 3 - Cancelled or refunded */}
+                  <div className={styles.statCard}>
+                    <div className={`${styles.statIcon} ${styles.statIconRed}`}>
+                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
+                        <circle cx="10" cy="10" r="7.5" fill="#fee2e2" stroke="#dc2626" strokeWidth="1.6" />
+                        <line x1="7.5" y1="7.5" x2="12.5" y2="12.5" stroke="#dc2626" strokeWidth="1.6" strokeLinecap="round" />
+                        <line x1="12.5" y1="7.5" x2="7.5" y2="12.5" stroke="#dc2626" strokeWidth="1.6" strokeLinecap="round" />
+                      </svg>
+                    </div>
+                    <div className={styles.statContent}>
+                      <span className={styles.statLabel}>
+                        Of those, cancelled
+                        <br />
+                        or refunded
+                      </span>
+                      <span className={styles.statValue}>310</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right side - Rupee & chart illustration matching wireframe */}
+              <div className={styles.modalRight}>
+                <svg
+                  width="180"
+                  height="160"
+                  viewBox="0 0 180 160"
+                  fill="none"
+                  className={styles.modalIllustration}
+                >
+                  {/* Soft green background auras */}
+                  <circle cx="120" cy="70" r="60" fill="#f0fdf4" />
+                  <circle cx="70" cy="85" r="45" fill="#f6fef8" />
+
+                  {/* Floating document / card */}
+                  <rect
+                    x="20"
+                    y="45"
+                    width="95"
+                    height="68"
+                    rx="8"
+                    fill="white"
+                    stroke="#e5e7eb"
+                    strokeWidth="1"
+                  />
+                  {/* Top pill inside card */}
+                  <rect x="28" y="55" width="38" height="8" rx="4" fill="#bbf7d0" />
+                  {/* Row 1 inside card */}
+                  <circle cx="31" cy="75" r="2.5" fill="#bbf7d0" />
+                  <rect x="37" y="73.5" width="32" height="3.5" rx="1.75" fill="#e5e7eb" />
+                  {/* Row 2 inside card */}
+                  <circle cx="31" cy="88" r="2.5" fill="#bbf7d0" />
+                  <rect x="37" y="86.5" width="22" height="3.5" rx="1.75" fill="#e5e7eb" />
+
+                  {/* Rising bar chart columns */}
+                  {/* Bar 1 (leftmost/shortest) */}
+                  <rect x="118" y="92" width="10" height="24" rx="4" fill="#86efac" />
+                  {/* Bar 2 (middle) */}
+                  <rect x="132" y="76" width="10" height="40" rx="4" fill="#4ade80" />
+                  {/* Bar 3 (rightmost/tallest) */}
+                  <rect x="146" y="58" width="10" height="58" rx="4" fill="#22c55e" />
+
+                  {/* Rupee badge at top right */}
+                  <circle cx="138" cy="36" r="22" fill="#dcfce7" />
+                  <text
+                    x="138"
+                    y="44"
+                    textAnchor="middle"
+                    fontSize="22"
+                    fontWeight="700"
+                    fill="#15803d"
+                    fontFamily="system-ui, -apple-system, sans-serif"
+                  >
+                    ₹
+                  </text>
+                </svg>
+              </div>
+            </div>
+
+            {/* Modal footer buttons */}
+            <div className={styles.modalFooter}>
+              <button
+                className={styles.modalBtnSecondary}
+                onClick={handleCloseModal}
+              >
+                Maybe later
+              </button>
+              <button
+                className={styles.modalBtnPrimary}
+                onClick={handleCloseModal}
+              >
+                Continue to dashboard <span className={styles.arrow}>→</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Main Onboarding Screen ── */}
       <div className={styles.onboardingCard}>
         {/* Decorative background shapes */}
         <div className={styles.bgShape1} />
@@ -265,7 +487,7 @@ export default function Index() {
 
         {/* ── Get Started CTA ── */}
         <div className={styles.ctaWrapper}>
-          <button className={styles.ctaButton}>
+          <button className={styles.ctaButton} onClick={() => setShowModal(true)}>
             Get started <span className={styles.arrow}>→</span>
           </button>
         </div>

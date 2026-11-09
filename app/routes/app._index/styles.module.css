@@ -401,3 +401,269 @@
     right: 0;
   }
 }
+
+/* ===== Modal Styles ===== */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modalCard {
+  background: #ffffff;
+  border-radius: 16px;
+  width: 100%;
+  max-width: 690px;
+  position: relative;
+  box-shadow: 0 20px 30px -10px rgba(0, 0, 0, 0.15), 0 10px 15px -5px rgba(0, 0, 0, 0.05);
+  padding: 32px 32px 24px;
+  animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modalClose {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.modalClose:hover {
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+.modalBody {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.modalLeft {
+  flex: 1;
+  min-width: 0;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.modalChartIcon {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border-radius: 50%;
+  background: #e8f5e9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modalHeaderText {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.modalTitle {
+  font-size: 24px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 10px 0;
+  line-height: 1.25;
+  letter-spacing: -0.3px;
+}
+
+.modalDesc {
+  font-size: 13.5px;
+  color: #6b7280;
+  margin: 0 0 24px 0;
+  line-height: 1.45;
+}
+
+/* ===== Modal Stats Row ===== */
+.statsRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.statCard {
+  background: #ffffff;
+  border: 1px solid #f0f0f0;
+  border-radius: 12px;
+  padding: 12px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.statIcon {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.statIconGreen {
+  background: #e8f8ed;
+}
+
+.statIconAmber {
+  background: #fef7ea;
+}
+
+.statIconRed {
+  background: #fef2f2;
+}
+
+.statContent {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.statLabel {
+  font-size: 11px;
+  color: #6b7280;
+  line-height: 1.3;
+  font-weight: 500;
+}
+
+.statValue {
+  font-size: 20px;
+  font-weight: 700;
+  color: #111827;
+  margin-top: 2px;
+  line-height: 1.1;
+}
+
+/* ===== Modal Right Illustration ===== */
+.modalRight {
+  flex: 0 0 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 10px;
+}
+
+.modalIllustration {
+  width: 180px;
+  height: 160px;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.03));
+}
+
+/* ===== Modal Footer ===== */
+.modalFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 8px;
+}
+
+.modalBtnSecondary {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  color: #374151;
+  font-weight: 500;
+  font-size: 13.5px;
+  padding: 9px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.modalBtnSecondary:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.modalBtnPrimary {
+  background: #004d26;
+  color: #ffffff;
+  border: none;
+  font-weight: 600;
+  font-size: 13.5px;
+  padding: 9px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.modalBtnPrimary:hover {
+  background: #003d1e;
+  transform: translateY(-1px);
+}
+
+.modalBtnPrimary:active {
+  transform: translateY(0);
+}
+
+@media (max-width: 680px) {
+  .modalBody {
+    flex-direction: column;
+  }
+
+  .modalRight {
+    display: none;
+  }
+
+  .statsRow {
+    grid-template-columns: 1fr;
+  }
+
+  .modalTitle {
+    font-size: 20px;
+  }
+}
+
