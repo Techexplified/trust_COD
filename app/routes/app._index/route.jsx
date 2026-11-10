@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../../shopify.server";
@@ -10,10 +10,27 @@ export const loader = async ({ request }) => {
 };
 
 export default function Dashboard() {
-  const [showModal, setShowModal] = useState(true);
+  const [showModal, setShowModal] = useState(false);
   const [checkoutStatus, setCheckoutStatus] = useState("Off");
 
+  // Only show modal once when the app is opened, not on every page refresh
+  useEffect(() => {
+    try {
+      const hasSeenModal = localStorage.getItem("trust_cod_loss_modal_shown");
+      if (!hasSeenModal) {
+        setShowModal(true);
+      }
+    } catch {
+      // fallback if storage restricted
+    }
+  }, []);
+
   const handleCloseModal = () => {
+    try {
+      localStorage.setItem("trust_cod_loss_modal_shown", "true");
+    } catch {
+      // fallback if storage restricted
+    }
     setShowModal(false);
   };
 
@@ -234,18 +251,34 @@ export default function Dashboard() {
             </p>
           </div>
 
-          <button className={styles.datePickerBtn} type="button">
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-              <rect x="3" y="4" width="14" height="13" rx="2" stroke="#4b5563" strokeWidth="1.6" />
-              <line x1="3" y1="8" x2="17" y2="8" stroke="#4b5563" strokeWidth="1.6" />
-              <line x1="7" y1="2" x2="7" y2="5" stroke="#4b5563" strokeWidth="1.6" strokeLinecap="round" />
-              <line x1="13" y1="2" x2="13" y2="5" stroke="#4b5563" strokeWidth="1.6" strokeLinecap="round" />
-            </svg>
-            <span>Last 30 days</span>
-            <svg width="12" height="12" viewBox="0 0 20 20" fill="none">
-              <path d="M5 7.5L10 12.5L15 7.5" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <button
+              className={styles.datePickerBtn}
+              type="button"
+              onClick={() => setShowModal(true)}
+              title="View COD losses prevention summary"
+            >
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="none">
+                <rect x="3" y="11" width="3.5" height="7" rx="1" fill="#16a34a" />
+                <rect x="8.5" y="7" width="3.5" height="11" rx="1" fill="#16a34a" />
+                <rect x="14" y="3" width="3.5" height="15" rx="1" fill="#16a34a" />
+              </svg>
+              <span>COD loss report</span>
+            </button>
+
+            <button className={styles.datePickerBtn} type="button">
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+                <rect x="3" y="4" width="14" height="13" rx="2" stroke="#4b5563" strokeWidth="1.6" />
+                <line x1="3" y1="8" x2="17" y2="8" stroke="#4b5563" strokeWidth="1.6" />
+                <line x1="7" y1="2" x2="7" y2="5" stroke="#4b5563" strokeWidth="1.6" strokeLinecap="round" />
+                <line x1="13" y1="2" x2="13" y2="5" stroke="#4b5563" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+              <span>Last 30 days</span>
+              <svg width="12" height="12" viewBox="0 0 20 20" fill="none">
+                <path d="M5 7.5L10 12.5L15 7.5" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Banner: Checkout COD control */}
