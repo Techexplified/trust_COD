@@ -1,408 +1,491 @@
-/* ===== Onboarding Card ===== */
-.onboardingCard {
-  position: relative;
-  background: linear-gradient(145deg, #f8fdf9 0%, #eef9f0 40%, #f0faf2 70%, #e8f5eb 100%);
-  border-radius: 16px;
-  padding: 48px 48px 32px;
-  overflow: hidden;
-  margin: 16px 0;
+/* ===== Dashboard Page Styles ===== */
+.dashboardContainer {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 0 48px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #111827;
 }
 
-/* ===== Decorative Background Shapes ===== */
-.bgShape1 {
-  position: absolute;
-  top: -60px;
-  right: -40px;
-  width: 350px;
-  height: 350px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(22, 163, 74, 0.06) 0%, transparent 70%);
-  pointer-events: none;
-}
-
-.bgShape2 {
-  position: absolute;
-  bottom: -80px;
-  left: -60px;
-  width: 300px;
-  height: 300px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(22, 163, 74, 0.04) 0%, transparent 70%);
-  pointer-events: none;
-}
-
-.bgShape3 {
-  position: absolute;
-  top: 40%;
-  left: 30%;
-  width: 200px;
-  height: 200px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(22, 163, 74, 0.03) 0%, transparent 70%);
-  pointer-events: none;
-}
-
-/* ===== Main Content Layout ===== */
-.mainContent {
+/* ===== Header Section ===== */
+.headerRow {
   display: flex;
-  gap: 32px;
   align-items: flex-start;
-  position: relative;
-  z-index: 1;
-}
-
-/* ===== Left Section ===== */
-.left {
-  flex: 1;
-  min-width: 0;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
 }
 
 .heading {
-  font-size: 34px;
+  font-size: 28px;
   font-weight: 700;
-  color: #1a1a1a;
-  margin: 0 0 8px 0;
-  line-height: 1.2;
-  letter-spacing: -0.5px;
+  color: #111827;
+  margin: 0 0 4px 0;
+  letter-spacing: -0.3px;
 }
 
-.brand {
-  color: #16a34a;
-}
-
-.tagline {
-  font-size: 16px;
-  color: #6b7280;
-  margin: 0 0 36px 0;
-  line-height: 1.5;
-}
-
-/* ===== Feature List ===== */
-.featureList {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.feature {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-}
-
-.iconCircle {
-  width: 42px;
-  height: 42px;
-  min-width: 42px;
-  border-radius: 50%;
-  background: #16a34a;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 8px rgba(22, 163, 74, 0.25);
-}
-
-.featureTitle {
-  font-size: 15px;
-  font-weight: 600;
-  color: #1a1a1a;
-  margin: 2px 0 4px 0;
-  line-height: 1.3;
-}
-
-.featureDesc {
+.subheading {
   font-size: 14px;
-  color: #6b7280;
-  margin: 0;
-  line-height: 1.45;
-}
-
-/* ===== Right Section – Illustration ===== */
-.right {
-  flex: 0 0 340px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-
-.illustrationArea {
-  position: relative;
-  width: 320px;
-  height: 280px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.glowCircle {
-  position: absolute;
-  width: 200px;
-  height: 200px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(22, 163, 74, 0.12) 0%, rgba(22, 163, 74, 0.04) 50%, transparent 70%);
-  left: 20px;
-  top: 50%;
-  transform: translateY(-50%);
-}
-
-.logoImage {
-  width: 150px;
-  height: 150px;
-  object-fit: contain;
-  position: relative;
-  z-index: 1;
-  margin-left: -40px;
-  filter: drop-shadow(0 4px 12px rgba(22, 101, 52, 0.15));
-}
-
-/* ===== Risk Badges ===== */
-.badge {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: white;
-  padding: 10px 16px;
-  border-radius: 10px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-  z-index: 2;
-  white-space: nowrap;
-}
-
-.badgeHigh {
-  top: 10px;
-  right: 0;
-}
-
-.badgeMedium {
-  top: 50%;
-  right: -10px;
-  transform: translateY(-50%);
-}
-
-.badgeLow {
-  bottom: 10px;
-  right: 0;
-}
-
-.badgeIcon {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.badgeLabel {
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.3;
-}
-
-.badgeDesc {
-  font-size: 11px;
-  color: #6b7280;
-  line-height: 1.3;
-}
-
-/* ===== App Embed Bar ===== */
-.embedBar {
-  margin-top: 36px;
-  background: rgba(232, 245, 233, 0.7);
-  backdrop-filter: blur(4px);
-  border-radius: 12px;
-  padding: 16px 20px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  position: relative;
-  z-index: 1;
-  border: 1px solid rgba(22, 163, 74, 0.08);
-}
-
-.embedIcon {
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  background: #dcfce7;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.embedTextArea {
-  flex: 1;
-  min-width: 0;
-}
-
-.embedTitle {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1a1a1a;
-  margin: 0 0 2px 0;
-}
-
-.embedDesc {
-  font-size: 13px;
   color: #6b7280;
   margin: 0;
   line-height: 1.4;
 }
 
-/* ===== Toggle Switch ===== */
-.toggle {
-  position: relative;
-  display: inline-block;
-  width: 48px;
-  height: 28px;
-  flex-shrink: 0;
+.datePickerBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #374151;
   cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: all 0.15s ease;
+  font-family: inherit;
 }
 
-.toggleInput {
-  opacity: 0;
-  width: 0;
-  height: 0;
-  position: absolute;
+.datePickerBtn:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
 }
 
-.toggleSlider {
-  position: absolute;
-  cursor: pointer;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: #d1d5db;
-  transition: background-color 0.25s ease;
-  border-radius: 28px;
+/* ===== Banner: Checkout COD Control ===== */
+.bannerCard {
+  background: linear-gradient(135deg, #f0fdf4 0%, #f6fcf8 100%);
+  border: 1px solid #dcfce7;
+  border-radius: 14px;
+  padding: 22px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
 }
 
-.toggleSlider::before {
-  position: absolute;
-  content: "";
-  height: 22px;
-  width: 22px;
-  left: 3px;
-  bottom: 3px;
-  background-color: white;
-  transition: transform 0.25s ease;
+.bannerContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.bannerTitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 4px 0;
+}
+
+.bannerDesc {
+  font-size: 13.5px;
+  color: #6b7280;
+  margin: 0 0 10px 0;
+}
+
+.statusIndicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #4b5563;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  background-color: #6b7280;
+  display: inline-block;
 }
 
-.toggleInput:checked + .toggleSlider {
+.statusDotActive {
   background-color: #16a34a;
 }
 
-.toggleInput:checked + .toggleSlider::before {
-  transform: translateX(20px);
-}
-
-/* ===== Embed Status ===== */
-.embedStatus {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.embedStatus span {
-  font-size: 13px;
-  color: #16a34a;
-  font-weight: 500;
-}
-
-/* ===== Get Started Button ===== */
-.ctaWrapper {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 20px;
-  position: relative;
-  z-index: 1;
-}
-
-.ctaButton {
-  background: #1a1a1a;
-  color: white;
+.btnPrimary {
+  background: #004d26;
+  color: #ffffff;
   border: none;
-  padding: 13px 28px;
-  border-radius: 10px;
-  font-size: 15px;
   font-weight: 600;
+  font-size: 14px;
+  padding: 10px 22px;
+  border-radius: 8px;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  transition: background-color 0.2s ease, transform 0.15s ease;
+  transition: all 0.15s ease;
+  white-space: nowrap;
   font-family: inherit;
-  letter-spacing: 0.01em;
+  flex-shrink: 0;
+  text-decoration: none;
 }
 
-.ctaButton:hover {
-  background: #333;
+.btnPrimary:hover {
+  background: #003d1e;
   transform: translateY(-1px);
 }
 
-.ctaButton:active {
+.btnPrimary:active {
   transform: translateY(0);
 }
 
-.arrow {
-  font-size: 18px;
-  transition: transform 0.2s ease;
+.arrowIcon {
+  font-size: 16px;
+  transition: transform 0.15s ease;
 }
 
-.ctaButton:hover .arrow {
+.btnPrimary:hover .arrowIcon {
   transform: translateX(3px);
 }
 
-/* ===== Responsive ===== */
-@media (max-width: 768px) {
-  .onboardingCard {
-    padding: 32px 24px 24px;
-  }
-
-  .mainContent {
-    flex-direction: column;
-    gap: 32px;
-  }
-
-  .right {
-    flex: none;
-    width: 100%;
-  }
-
-  .illustrationArea {
-    width: 100%;
-    height: 240px;
-    justify-content: center;
-  }
-
-  .logoImage {
-    margin-left: 0;
-  }
-
-  .heading {
-    font-size: 28px;
-  }
-
-  .embedBar {
-    flex-wrap: wrap;
-  }
-
-  .embedTextArea {
-    flex-basis: calc(100% - 60px);
-  }
-
-  .badgeMedium {
-    right: 0;
-  }
+/* ===== Section: Risk Profile of Your COD Orders ===== */
+.sectionCard {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 26px 28px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
 }
 
-/* ===== Modal Styles ===== */
+.sectionHeader {
+  margin-bottom: 22px;
+}
+
+.sectionTitle {
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 4px 0;
+}
+
+.sectionSubtitle {
+  font-size: 13.5px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.riskProfileContent {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 36px;
+  align-items: center;
+}
+
+/* Donut Chart Layout */
+.chartContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 220px;
+  height: 220px;
+  margin: 0 auto;
+}
+
+.chartSvg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.chartCenterLabel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+}
+
+.chartTotal {
+  font-size: 34px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.chartLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin: 2px 0 0 0;
+}
+
+.chartSublabel {
+  font-size: 11.5px;
+  color: #9ca3af;
+  margin: 2px 0 0 0;
+}
+
+/* Risk Profile Cards on the right */
+.profileCardsList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.profileCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-decoration: none;
+}
+
+.profileCard:hover {
+  transform: translateX(2px);
+  filter: brightness(0.98);
+}
+
+.profileCardLow {
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+}
+
+.profileCardMedium {
+  background: #fffbeb;
+  border: 1px solid #fde047;
+}
+
+.profileCardHigh {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+}
+
+.profileLeft {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.profileDot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dotLow {
+  background-color: #16a34a;
+}
+
+.dotMedium {
+  background-color: #f59e0b;
+}
+
+.dotHigh {
+  background-color: #dc2626;
+}
+
+.profileTitle {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 2px 0;
+}
+
+.profileCount {
+  font-size: 13px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.chevronIcon {
+  color: #9ca3af;
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* ===== Section: Manage Risk Rules ===== */
+.riskRulesBanner {
+  background: #f6fbf7;
+  border: 1px solid #dcfce7;
+  border-radius: 14px;
+  padding: 20px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.riskRulesLeft {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+}
+
+.riskRulesIconBox {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  border-radius: 10px;
+  background: #dcfce7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.riskRulesContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.riskRulesTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 2px 0;
+}
+
+.riskRulesDesc {
+  font-size: 13px;
+  color: #6b7280;
+  margin: 0 0 8px 0;
+}
+
+.pillRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.pillDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.pillHigh {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.pillHigh .pillDot {
+  background: #dc2626;
+}
+
+.pillMedium {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.pillMedium .pillDot {
+  background: #d97706;
+}
+
+.pillLow {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.pillLow .pillDot {
+  background: #16a34a;
+}
+
+/* ===== Bottom Action Cards Grid ===== */
+.bottomGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.actionCard {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 24px 22px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: all 0.15s ease;
+}
+
+.actionCard:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+.actionCardTop {
+  margin-bottom: 20px;
+}
+
+.actionCardIcon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #dcfce7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.actionCardTitle {
+  font-size: 15.5px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 6px 0;
+}
+
+.actionCardDesc {
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.45;
+  margin: 0;
+  min-height: 38px;
+}
+
+.btnOutline {
+  background: #ffffff;
+  border: 1px solid #16a34a;
+  color: #16a34a;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-weight: 600;
+  font-size: 13.5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  width: 100%;
+  text-decoration: none;
+}
+
+.btnOutline:hover {
+  background: #f0fdf4;
+  border-color: #15803d;
+  color: #15803d;
+}
+
+/* ===== Modal Styles (Appears on Dashboard) ===== */
 .modalOverlay {
   position: fixed;
   inset: 0;
@@ -520,7 +603,7 @@
   line-height: 1.45;
 }
 
-/* ===== Modal Stats Row ===== */
+/* Modal Stats Row */
 .statsRow {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -582,7 +665,7 @@
   line-height: 1.1;
 }
 
-/* ===== Modal Right Illustration ===== */
+/* Modal Right Illustration */
 .modalRight {
   flex: 0 0 180px;
   display: flex;
@@ -597,7 +680,7 @@
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.03));
 }
 
-/* ===== Modal Footer ===== */
+/* Modal Footer */
 .modalFooter {
   display: flex;
   align-items: center;
@@ -649,6 +732,28 @@
   transform: translateY(0);
 }
 
+/* ===== Responsive Styles ===== */
+@media (max-width: 900px) {
+  .riskProfileContent {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .bottomGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .bannerCard {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .riskRulesBanner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 @media (max-width: 680px) {
   .modalBody {
     flex-direction: column;
@@ -666,4 +771,3 @@
     font-size: 20px;
   }
 }
-
