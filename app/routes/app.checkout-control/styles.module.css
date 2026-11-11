@@ -1,0 +1,639 @@
+/* ===== Checkout COD Control Page Styles ===== */
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px 0 54px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #111827;
+}
+
+/* ===== Back Navigation ===== */
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  text-decoration: underline;
+  margin-bottom: 16px;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.backLink:hover {
+  color: #16a34a;
+}
+
+.arrowLeft {
+  font-size: 16px;
+  text-decoration: none;
+}
+
+/* ===== Header Section ===== */
+.headerRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.headerText {
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 6px 0;
+  letter-spacing: -0.3px;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.headerIllustration {
+  flex-shrink: 0;
+  width: 200px;
+  height: 110px;
+}
+
+/* ===== Banner: Turn on checkout COD control ===== */
+.bannerCard {
+  background: linear-gradient(135deg, #f0fdf4 0%, #f7fdf9 100%);
+  border: 1px solid #bbf7d0;
+  border-radius: 14px;
+  padding: 20px 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 22px;
+}
+
+.bannerLeft {
+  flex: 1;
+  min-width: 0;
+}
+
+.bannerTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.checkBadge {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #16a34a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.bannerTitle {
+  font-size: 16px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0;
+}
+
+.bannerDesc {
+  font-size: 13.5px;
+  color: #6b7280;
+  margin: 0 0 10px 0;
+  line-height: 1.4;
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.statusIndicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #6b7280;
+  display: inline-block;
+}
+
+.statusDotActive {
+  background-color: #16a34a;
+}
+
+.statusText {
+  font-weight: 600;
+  color: #374151;
+}
+
+.statusHint {
+  color: #6b7280;
+  font-size: 12.5px;
+}
+
+/* Toggle Switch */
+.toggleWrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.toggleLabel {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+  min-width: 26px;
+}
+
+.toggleSwitch {
+  position: relative;
+  display: inline-block;
+  width: 46px;
+  height: 26px;
+  cursor: pointer;
+}
+
+.toggleInput {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggleSlider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #cbd5e1;
+  transition: 0.25s;
+  border-radius: 26px;
+}
+
+.toggleSlider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.25s;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.toggleInput:checked + .toggleSlider {
+  background-color: #16a34a;
+}
+
+.toggleInput:checked + .toggleSlider:before {
+  transform: translateX(20px);
+}
+
+/* ===== Section Cards ===== */
+.sectionCard {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 24px 28px;
+  margin-bottom: 22px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.sectionTitle {
+  font-size: 16.5px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 4px 0;
+}
+
+.sectionDesc {
+  font-size: 13.5px;
+  color: #6b7280;
+  margin: 0 0 20px 0;
+}
+
+/* ===== Section 1: Choose the rule ===== */
+.ruleOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 18px;
+  cursor: pointer;
+}
+
+.radioCircle {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid #d1d5db;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+  transition: all 0.15s ease;
+}
+
+.radioCircleSelected {
+  border-color: #16a34a;
+}
+
+.radioDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #16a34a;
+}
+
+.ruleContent {
+  flex: 1;
+}
+
+.ruleTitle {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 2px 0;
+}
+
+.ruleSubtext {
+  font-size: 13px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.limitInputsRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  margin-left: 32px;
+  font-size: 13.5px;
+  color: #374151;
+  flex-wrap: wrap;
+}
+
+.numberInput {
+  width: 65px;
+  text-align: center;
+  padding: 7px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  outline: none;
+  font-family: inherit;
+}
+
+.numberInput:focus {
+  border-color: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15);
+}
+
+/* ===== Section 2: Which history counts? ===== */
+.historyList {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.historyItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkboxBox {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 1.8px solid #d1d5db;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+  background-color: #ffffff;
+  transition: all 0.15s ease;
+}
+
+.checkboxBoxChecked {
+  background-color: #16a34a;
+  border-color: #16a34a;
+}
+
+.historyContent {
+  flex: 1;
+}
+
+.historyTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 2px 0;
+}
+
+.historyDesc {
+  font-size: 12.5px;
+  color: #6b7280;
+  margin: 0;
+}
+
+/* ===== Section 3: Your own lists ===== */
+.twoColGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.listCard {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.listHeader {
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.listHeaderAllow {
+  background: #f0fdf4;
+  border-bottom: 1px solid #e8f5e9;
+}
+
+.listHeaderHide {
+  background: #fef2f2;
+  border-bottom: 1px solid #fee2e2;
+}
+
+.listIconBox {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.iconBoxAllow {
+  background: #dcfce7;
+}
+
+.iconBoxHide {
+  background: #fee2e2;
+}
+
+.listTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 2px 0;
+}
+
+.listSub {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.listBody {
+  padding: 16px 18px;
+}
+
+.inputRow {
+  display: flex;
+  gap: 8px;
+}
+
+.phoneInput {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 13.5px;
+  color: #111827;
+  outline: none;
+  font-family: inherit;
+}
+
+.phoneInput:focus {
+  border-color: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15);
+}
+
+.btnAdd {
+  background: #004d26;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-weight: 600;
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.btnAdd:hover {
+  background: #003d1e;
+}
+
+.emptyStateBox {
+  margin-top: 14px;
+  border: 1px dashed #e5e7eb;
+  border-radius: 10px;
+  padding: 18px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fafafa;
+}
+
+.emptyIcon {
+  width: 28px;
+  height: 28px;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.emptyTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin: 0 0 2px 0;
+}
+
+.emptySub {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.tagList {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.phoneTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 4px 10px;
+  font-size: 12.5px;
+  color: #374151;
+  font-weight: 500;
+}
+
+.tagRemoveBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-size: 14px;
+  color: #9ca3af;
+  display: flex;
+  align-items: center;
+}
+
+.tagRemoveBtn:hover {
+  color: #ef4444;
+}
+
+/* Info Callout Box */
+.infoBox {
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  padding: 14px 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.infoIcon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: #2563eb;
+  margin-top: 1px;
+}
+
+.infoText {
+  font-size: 13px;
+  color: #1e40af;
+  line-height: 1.45;
+  margin: 0;
+}
+
+/* ===== Footer Actions ===== */
+.footerRow {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+  padding-bottom: 40px;
+}
+
+.btnCancel {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  color: #374151;
+  padding: 10px 22px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.btnCancel:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.btnSave {
+  background: #004d26;
+  color: #ffffff;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.btnSave:hover {
+  background: #003d1e;
+  transform: translateY(-1px);
+}
+
+.btnSave:active {
+  transform: translateY(0);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .headerRow {
+    flex-direction: column;
+  }
+
+  .headerIllustration {
+    display: none;
+  }
+
+  .bannerCard {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .twoColGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .limitInputsRow {
+    margin-left: 0;
+  }
+}

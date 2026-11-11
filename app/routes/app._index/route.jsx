@@ -303,12 +303,9 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <button
-            className={styles.btnPrimary}
-            onClick={() => setCheckoutStatus((s) => (s === "Off" ? "On" : "Off"))}
-          >
+          <Link to="/app/checkout-control" className={styles.btnPrimary}>
             Set up checkout control <span className={styles.arrowIcon}>→</span>
-          </button>
+          </Link>
         </div>
 
         {/* Section: Risk profile of your COD orders */}
