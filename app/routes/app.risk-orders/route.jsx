@@ -70,6 +70,7 @@ export default function RiskOrders() {
   const [searchQuery, setSearchQuery] = useState("");
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [activePage, setActivePage] = useState(1);
+  const [orderActions, setOrderActions] = useState({});
 
   const activeCategory = ["low", "medium", "high"].includes(currentRisk) ? currentRisk : "high";
 
@@ -77,6 +78,14 @@ export default function RiskOrders() {
     setSearchParams({ risk });
     setOpenDropdownId(null);
     setActivePage(1);
+  };
+
+  const handleSelectAction = (orderId, actionName) => {
+    setOrderActions((prev) => ({
+      ...prev,
+      [orderId]: actionName,
+    }));
+    setOpenDropdownId(null);
   };
 
   const currentList = ORDERS_DATA[activeCategory] || [];
@@ -258,42 +267,108 @@ export default function RiskOrders() {
                         <div className={styles.actionDropdownWrap}>
                           <button
                             type="button"
-                            className={styles.actionBtn}
+                            className={`${styles.actionBtn} ${
+                              orderActions[order.id] === "Confirmed"
+                                ? styles.actionBtnConfirmed
+                                : orderActions[order.id] === "Cancelled"
+                                ? styles.actionBtnCancelled
+                                : orderActions[order.id] === "Unreachable"
+                                ? styles.actionBtnUnreachable
+                                : orderActions[order.id] === "Mark safe"
+                                ? styles.actionBtnMarkSafe
+                                : ""
+                            }`}
                             onClick={() => toggleDropdown(order.id)}
                           >
-                            <span>Choose action</span>
+                            <span>{orderActions[order.id] || "Choose action"}</span>
                             <span className={styles.dropdownArrow}>▼</span>
                           </button>
 
                           {openDropdownId === order.id && (
                             <div className={styles.actionMenu}>
+                              {/* 1. Confirmed */}
                               <button
                                 type="button"
                                 className={styles.actionMenuItem}
-                                onClick={() => setOpenDropdownId(null)}
+                                onClick={() => handleSelectAction(order.id, "Confirmed")}
                               >
-                                📞 Call customer
+                                <div className={`${styles.actionItemIcon} ${styles.actionIconConfirmed}`}>
+                                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                                    <path
+                                      d="M3.5 8.5L6.5 11.5L12.5 4.5"
+                                      stroke="currentColor"
+                                      strokeWidth="2.2"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    />
+                                  </svg>
+                                </div>
+                                <div className={styles.actionItemContent}>
+                                  <div className={styles.actionItemTitle}>Confirmed</div>
+                                  <p className={styles.actionItemDesc}>Order is okay to ship (tagged in Shopify)</p>
+                                </div>
                               </button>
+
+                              {/* 2. Cancelled */}
                               <button
                                 type="button"
                                 className={styles.actionMenuItem}
-                                onClick={() => setOpenDropdownId(null)}
+                                onClick={() => handleSelectAction(order.id, "Cancelled")}
                               >
-                                💳 Request prepayment
+                                <div className={`${styles.actionItemIcon} ${styles.actionIconCancelled}`}>
+                                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                                    <path
+                                      d="M4 4L12 12M12 4L4 12"
+                                      stroke="currentColor"
+                                      strokeWidth="2"
+                                      strokeLinecap="round"
+                                    />
+                                  </svg>
+                                </div>
+                                <div className={styles.actionItemContent}>
+                                  <div className={styles.actionItemTitle}>Cancelled</div>
+                                  <p className={styles.actionItemDesc}>Order should not ship (counts to saved)</p>
+                                </div>
                               </button>
+
+                              {/* 3. Unreachable */}
                               <button
                                 type="button"
                                 className={styles.actionMenuItem}
-                                onClick={() => setOpenDropdownId(null)}
+                                onClick={() => handleSelectAction(order.id, "Unreachable")}
                               >
-                                ✔ Mark as verified
+                                <div className={`${styles.actionItemIcon} ${styles.actionIconUnreachable}`}>
+                                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                                    <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.8" />
+                                    <line x1="3.5" y1="3.5" x2="12.5" y2="12.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                  </svg>
+                                </div>
+                                <div className={styles.actionItemContent}>
+                                  <div className={styles.actionItemTitle}>Unreachable</div>
+                                  <p className={styles.actionItemDesc}>Customer did not answer call (retry later)</p>
+                                </div>
                               </button>
+
+                              {/* 4. Mark safe */}
                               <button
                                 type="button"
-                                className={`${styles.actionMenuItem} ${styles.actionMenuItemDanger}`}
-                                onClick={() => setOpenDropdownId(null)}
+                                className={styles.actionMenuItem}
+                                onClick={() => handleSelectAction(order.id, "Mark safe")}
                               >
-                                ✕ Cancel order
+                                <div className={`${styles.actionItemIcon} ${styles.actionIconMarkSafe}`}>
+                                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                                    <path
+                                      d="M8 1.5L13.5 3.5V8.5C13.5 12 8 14.5 8 14.5C8 14.5 2.5 12 2.5 8.5V3.5L8 1.5Z"
+                                      stroke="currentColor"
+                                      strokeWidth="1.8"
+                                      strokeLinejoin="round"
+                                    />
+                                  </svg>
+                                </div>
+                                <div className={styles.actionItemContent}>
+                                  <div className={styles.actionItemTitle}>Mark safe</div>
+                                  <p className={styles.actionItemDesc}>Flag was wrong, moves order to low risk</p>
+                                </div>
                               </button>
                             </div>
                           )}

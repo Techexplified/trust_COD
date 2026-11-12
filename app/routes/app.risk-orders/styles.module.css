@@ -359,40 +359,112 @@
   margin-top: 4px;
   background: #ffffff;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  border-radius: 10px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
   z-index: 50;
-  min-width: 170px;
-  padding: 4px 0;
+  min-width: 240px;
+  padding: 6px 0;
   text-align: left;
 }
 
 .actionMenuItem {
-  padding: 8px 14px;
+  padding: 10px 14px;
   font-size: 13px;
   color: #374151;
   cursor: pointer;
   transition: background-color 0.15s ease;
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   width: 100%;
   background: none;
   border: none;
   text-align: left;
   font-family: inherit;
+  box-sizing: border-box;
 }
 
 .actionMenuItem:hover {
-  background-color: #f3f4f6;
-  color: #111827;
+  background-color: #f9fafb;
 }
 
-.actionMenuItemDanger {
+.actionItemIcon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.actionIconConfirmed {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.actionIconCancelled {
+  background: #fee2e2;
   color: #dc2626;
 }
 
-.actionMenuItemDanger:hover {
+.actionIconUnreachable {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.actionIconMarkSafe {
+  background: #e0f2fe;
+  color: #0284c7;
+}
+
+.actionItemContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.actionItemTitle {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 2px 0;
+  line-height: 1.2;
+}
+
+.actionItemDesc {
+  font-size: 11.5px;
+  color: #6b7280;
+  margin: 0;
+  line-height: 1.35;
+}
+
+.actionBtnConfirmed {
+  background-color: #f0fdf4;
+  border-color: #86efac;
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.actionBtnCancelled {
   background-color: #fef2f2;
-  color: #b91c1c;
+  border-color: #fca5a5;
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.actionBtnUnreachable {
+  background-color: #fffbeb;
+  border-color: #fde047;
+  color: #d97706;
+  font-weight: 600;
+}
+
+.actionBtnMarkSafe {
+  background-color: #f0f9ff;
+  border-color: #bae6fd;
+  color: #0284c7;
+  font-weight: 600;
 }
 
 /* ===== Pagination & Footer ===== */
