@@ -13,6 +13,15 @@ export default function Onboarding() {
   const [appEmbedEnabled, setAppEmbedEnabled] = useState(true);
   const navigate = useNavigate();
 
+  const handleGetStarted = () => {
+    try {
+      localStorage.setItem("trust_cod_onboarding_completed", "true");
+    } catch {
+      // fallback
+    }
+    navigate("/app");
+  };
+
   return (
     <s-page heading="Trust COD">
       {/* ── Main Onboarding Screen ── */}
@@ -268,7 +277,7 @@ export default function Onboarding() {
 
         {/* ── Get Started CTA ── */}
         <div className={styles.ctaWrapper}>
-          <button className={styles.ctaButton} onClick={() => navigate("/app")}>
+          <button className={styles.ctaButton} onClick={handleGetStarted}>
             Get started <span className={styles.arrow}>→</span>
           </button>
         </div>

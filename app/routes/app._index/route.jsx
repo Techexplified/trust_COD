@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../../shopify.server";
 import styles from "./styles.module.css";
@@ -10,11 +10,22 @@ export const loader = async ({ request }) => {
 };
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [showModal, setShowModal] = useState(false);
   const [checkoutStatus, setCheckoutStatus] = useState("Off");
 
-  // Only show modal once when the app is opened, not on every page refresh
+  // Onboarding appears once for first-time visitors; afterwards Dashboard & modal appear
   useEffect(() => {
+    try {
+      const hasCompletedOnboarding = localStorage.getItem("trust_cod_onboarding_completed");
+      if (!hasCompletedOnboarding) {
+        navigate("/app/onboarding", { replace: true });
+        return;
+      }
+    } catch {
+      // fallback if storage restricted
+    }
+
     try {
       const hasSeenModal = localStorage.getItem("trust_cod_loss_modal_shown");
       if (!hasSeenModal) {
@@ -23,7 +34,7 @@ export default function Dashboard() {
     } catch {
       // fallback if storage restricted
     }
-  }, []);
+  }, [navigate]);
 
   const handleCloseModal = () => {
     try {
