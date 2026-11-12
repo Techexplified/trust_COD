@@ -8,26 +8,23 @@
 }
 
 /* ===== Back Navigation ===== */
-.backLink {
+.backArrow {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 600;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   color: #111827;
-  text-decoration: underline;
-  margin-bottom: 16px;
-  cursor: pointer;
-  transition: color 0.15s ease;
-}
-
-.backLink:hover {
-  color: #16a34a;
-}
-
-.arrowLeft {
-  font-size: 16px;
   text-decoration: none;
+  margin-bottom: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.backArrow:hover {
+  background-color: #f3f4f6;
+  color: #16a34a;
 }
 
 /* ===== Header Section ===== */
