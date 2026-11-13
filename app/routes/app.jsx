@@ -18,7 +18,9 @@ export default function App() {
       <s-app-nav>
         <s-link href="/app">Dashboard</s-link>
         <s-link href="/app/risk-orders">Risk Orders</s-link>
-        <s-link href="/app/customers">Customers</s-link>
+        <s-link href="/app/contact-sheet">Contact Sheet</s-link>
+        <s-link href="/app/analytics">Analytics</s-link>
+        <s-link href="/app/risk-rules">Risk Rules</s-link>
         <s-link href="/app/settings">Settings</s-link>
       </s-app-nav>
       <Outlet />
