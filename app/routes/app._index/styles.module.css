@@ -462,27 +462,32 @@
 
 .btnOutline {
   background: #ffffff;
-  border: 1px solid #16a34a;
-  color: #16a34a;
+  border: 1px solid #86efac;
+  color: #15803d;
   border-radius: 8px;
-  padding: 9px 16px;
+  padding: 8px 16px;
   font-weight: 600;
   font-size: 13.5px;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 6px;
   transition: all 0.15s ease;
   font-family: inherit;
-  width: 100%;
+  width: fit-content;
+  align-self: flex-start;
   text-decoration: none;
 }
 
 .btnOutline:hover {
   background: #f0fdf4;
-  border-color: #15803d;
-  color: #15803d;
+  border-color: #16a34a;
+  color: #16a34a;
+}
+
+.btnOutline:hover .arrowIcon {
+  transform: translateX(3px);
 }
 
 /* ===== Modal Styles (Appears on Dashboard) ===== */

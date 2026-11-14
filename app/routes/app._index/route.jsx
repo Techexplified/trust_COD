@@ -524,7 +524,7 @@ export default function Dashboard() {
               </div>
               <h3 className={styles.actionCardTitle}>Review us</h3>
               <p className={styles.actionCardDesc}>
-                Enjoying the app? Tell us what you think.
+                Enjoying the app? Tell us what you think and help us improve.
               </p>
             </div>
             <a
