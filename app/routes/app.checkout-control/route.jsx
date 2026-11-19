@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../../shopify.server";
@@ -12,7 +12,7 @@ export const loader = async ({ request }) => {
 export default function CheckoutControl() {
   const navigate = useNavigate();
 
-  // Control state
+  // Control state synced with localStorage
   const [isEnabled, setIsEnabled] = useState(false);
 
   // 1. Choose the rule
@@ -28,19 +28,57 @@ export default function CheckoutControl() {
     highRiskProfile: false,
   });
 
-  const toggleHistoryCheck = (key) => {
-    setHistoryChecks((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-  };
-
   // 3. Your own lists
   const [allowPhoneInput, setAllowPhoneInput] = useState("");
   const [allowedNumbers, setAllowedNumbers] = useState([]);
 
   const [hidePhoneInput, setHidePhoneInput] = useState("");
   const [hiddenNumbers, setHiddenNumbers] = useState([]);
+
+  // Load saved settings from localStorage
+  useEffect(() => {
+    try {
+      const savedStatus = localStorage.getItem("trust_cod_checkout_status");
+      if (savedStatus) {
+        setIsEnabled(savedStatus === "On");
+      }
+      const savedRule = localStorage.getItem("trust_cod_rule_type");
+      if (savedRule) setRuleType(savedRule);
+
+      const savedMaxOrders = localStorage.getItem("trust_cod_max_orders");
+      if (savedMaxOrders) setMaxOrders(savedMaxOrders);
+
+      const savedDays = localStorage.getItem("trust_cod_time_period_days");
+      if (savedDays) setTimePeriodDays(savedDays);
+
+      const savedChecks = localStorage.getItem("trust_cod_history_checks");
+      if (savedChecks) setHistoryChecks(JSON.parse(savedChecks));
+
+      const savedAllowed = localStorage.getItem("trust_cod_allowed_numbers");
+      if (savedAllowed) setAllowedNumbers(JSON.parse(savedAllowed));
+
+      const savedHidden = localStorage.getItem("trust_cod_hidden_numbers");
+      if (savedHidden) setHiddenNumbers(JSON.parse(savedHidden));
+    } catch {
+      // storage
+    }
+  }, []);
+
+  const handleToggle = (checked) => {
+    setIsEnabled(checked);
+    try {
+      localStorage.setItem("trust_cod_checkout_status", checked ? "On" : "Off");
+    } catch {
+      // storage
+    }
+  };
+
+  const toggleHistoryCheck = (key) => {
+    setHistoryChecks((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
 
   const handleAddAllowed = (e) => {
     e?.preventDefault();
@@ -69,6 +107,17 @@ export default function CheckoutControl() {
   };
 
   const handleSave = () => {
+    try {
+      localStorage.setItem("trust_cod_checkout_status", isEnabled ? "On" : "Off");
+      localStorage.setItem("trust_cod_rule_type", ruleType);
+      localStorage.setItem("trust_cod_max_orders", maxOrders);
+      localStorage.setItem("trust_cod_time_period_days", timePeriodDays);
+      localStorage.setItem("trust_cod_history_checks", JSON.stringify(historyChecks));
+      localStorage.setItem("trust_cod_allowed_numbers", JSON.stringify(allowedNumbers));
+      localStorage.setItem("trust_cod_hidden_numbers", JSON.stringify(hiddenNumbers));
+    } catch {
+      // storage
+    }
     // Navigate back to dashboard with confirmation
     navigate("/app");
   };
@@ -206,7 +255,7 @@ export default function CheckoutControl() {
                 type="checkbox"
                 className={styles.toggleInput}
                 checked={isEnabled}
-                onChange={(e) => setIsEnabled(e.target.checked)}
+                onChange={(e) => handleToggle(e.target.checked)}
               />
               <span className={styles.toggleSlider} />
             </label>

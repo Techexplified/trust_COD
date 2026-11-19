@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../../shopify.server";
@@ -9,10 +9,87 @@ export const loader = async ({ request }) => {
   return null;
 };
 
+// Dynamic metrics for different date ranges
+const RANGE_METRICS = {
+  "Today": {
+    label: "Today",
+    total: 12,
+    low: 6,
+    lowPercent: 50,
+    med: 4,
+    medPercent: 33,
+    high: 2,
+    highPercent: 17,
+  },
+  "Last 7 days": {
+    label: "Last 7 days",
+    total: 58,
+    low: 28,
+    lowPercent: 48,
+    med: 19,
+    medPercent: 33,
+    high: 11,
+    highPercent: 19,
+  },
+  "Last 30 days": {
+    label: "Last 30 days",
+    total: 248,
+    low: 120,
+    lowPercent: 48,
+    med: 80,
+    medPercent: 32,
+    high: 48,
+    highPercent: 20,
+  },
+  "Last 90 days": {
+    label: "Last 90 days",
+    total: 720,
+    low: 350,
+    lowPercent: 49,
+    med: 230,
+    medPercent: 32,
+    high: 140,
+    highPercent: 19,
+  },
+};
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [showModal, setShowModal] = useState(false);
   const [checkoutStatus, setCheckoutStatus] = useState("Off");
+  const [embedToast, setEmbedToast] = useState("");
+
+  // Date range picker state
+  const [selectedRange, setSelectedRange] = useState("Last 30 days");
+  const [isDateDropdownOpen, setIsDateDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  // Load checkout control / app embed status from localStorage
+  useEffect(() => {
+    try {
+      const savedStatus = localStorage.getItem("trust_cod_checkout_status");
+      if (savedStatus) {
+        setCheckoutStatus(savedStatus);
+      }
+    } catch {
+      // fallback if storage restricted
+    }
+  }, []);
+
+  // Close date picker dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setIsDateDropdownOpen(false);
+      }
+    };
+    if (isDateDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isDateDropdownOpen]);
 
   // Onboarding appears once for first-time visitors; afterwards Dashboard & modal appear
   useEffect(() => {
@@ -51,9 +128,33 @@ export default function Dashboard() {
     }
   };
 
-  const toggleCheckoutStatus = () => {
-    setCheckoutStatus((prev) => (prev === "Off" ? "On" : "Off"));
+  const toggleCheckoutStatus = (forcedValue) => {
+    const next = typeof forcedValue === "boolean"
+      ? (forcedValue ? "On" : "Off")
+      : (checkoutStatus === "Off" ? "On" : "Off");
+    setCheckoutStatus(next);
+    try {
+      localStorage.setItem("trust_cod_checkout_status", next);
+    } catch {
+      // fallback
+    }
+
+    setEmbedToast(
+      next === "On"
+        ? "✓ App embed enabled: COD checkout control is active."
+        : "App embed disabled: COD is shown to all customers."
+    );
+    setTimeout(() => setEmbedToast(""), 3500);
   };
+
+  // Math for dynamic SVG Donut chart
+  const currentMetrics = RANGE_METRICS[selectedRange] || RANGE_METRICS["Last 30 days"];
+  const CIRCUMFERENCE = 471.24; // 2 * PI * 75
+  const highDash = (currentMetrics.highPercent / 100) * CIRCUMFERENCE;
+  const medDash = (currentMetrics.medPercent / 100) * CIRCUMFERENCE;
+  const lowDash = (currentMetrics.lowPercent / 100) * CIRCUMFERENCE;
+  const medOffset = -highDash;
+  const lowOffset = -(highDash + medDash);
 
   return (
     <s-page heading="Trust COD">
@@ -277,41 +378,106 @@ export default function Dashboard() {
               <span>COD loss report</span>
             </button>
 
-            <button className={styles.datePickerBtn} type="button">
-              <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
-                <rect x="3" y="4" width="14" height="13" rx="2" stroke="#4b5563" strokeWidth="1.6" />
-                <line x1="3" y1="8" x2="17" y2="8" stroke="#4b5563" strokeWidth="1.6" />
-                <line x1="7" y1="2" x2="7" y2="5" stroke="#4b5563" strokeWidth="1.6" strokeLinecap="round" />
-                <line x1="13" y1="2" x2="13" y2="5" stroke="#4b5563" strokeWidth="1.6" strokeLinecap="round" />
-              </svg>
-              <span>Last 30 days</span>
-              <svg width="12" height="12" viewBox="0 0 20 20" fill="none">
-                <path d="M5 7.5L10 12.5L15 7.5" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </button>
+            <div className={styles.datePickerWrapper} ref={dropdownRef}>
+              <button
+                className={`${styles.datePickerBtn} ${isDateDropdownOpen ? styles.datePickerBtnActive : ""}`}
+                type="button"
+                onClick={() => setIsDateDropdownOpen((prev) => !prev)}
+                aria-haspopup="true"
+                aria-expanded={isDateDropdownOpen}
+              >
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none">
+                  <rect x="3" y="4" width="14" height="13" rx="2" stroke="#4b5563" strokeWidth="1.6" />
+                  <line x1="3" y1="8" x2="17" y2="8" stroke="#4b5563" strokeWidth="1.6" />
+                  <line x1="7" y1="2" x2="7" y2="5" stroke="#4b5563" strokeWidth="1.6" strokeLinecap="round" />
+                  <line x1="13" y1="2" x2="13" y2="5" stroke="#4b5563" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+                <span>{selectedRange}</span>
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 20 20"
+                  fill="none"
+                  className={`${styles.dropdownChevron} ${isDateDropdownOpen ? styles.dropdownChevronOpen : ""}`}
+                >
+                  <path d="M5 7.5L10 12.5L15 7.5" stroke="#6b7280" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+
+              {isDateDropdownOpen && (
+                <div className={styles.dateDropdownMenu}>
+                  {Object.keys(RANGE_METRICS).map((rangeKey) => (
+                    <button
+                      key={rangeKey}
+                      type="button"
+                      className={`${styles.dateDropdownItem} ${selectedRange === rangeKey ? styles.dateDropdownItemActive : ""}`}
+                      onClick={() => {
+                        setSelectedRange(rangeKey);
+                        setIsDateDropdownOpen(false);
+                      }}
+                    >
+                      <span>{rangeKey}</span>
+                      {selectedRange === rangeKey && <span className={styles.checkIcon}>✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Banner: Checkout COD control */}
+        {/* Banner: Checkout COD control with working App Embed Toggle */}
         <div className={styles.bannerCard}>
           <div className={styles.bannerContent}>
-            <h2 className={styles.bannerTitle}>Checkout COD control</h2>
+            <div className={styles.bannerHeaderRow}>
+              <h2 className={styles.bannerTitle}>Checkout COD control</h2>
+            </div>
             <p className={styles.bannerDesc}>
               Hide or limit COD at checkout for customers with a risky history.
             </p>
-            <div
-              className={styles.statusIndicator}
-              style={{ cursor: "pointer" }}
-              onClick={toggleCheckoutStatus}
-              title="Click to toggle status"
-            >
-              <span
-                className={`${styles.statusDot} ${
-                  checkoutStatus === "On" ? styles.statusDotActive : ""
-                }`}
-              />
-              <span>Status: {checkoutStatus}</span>
+
+            <div className={styles.appEmbedControlRow}>
+              {/* Working App Embedded Toggle Switch Button */}
+              <div className={styles.toggleWrap}>
+                <label
+                  className={styles.toggleSwitch}
+                  title={`Click to turn app embed ${checkoutStatus === "On" ? "Off" : "On"}`}
+                >
+                  <input
+                    type="checkbox"
+                    className={styles.toggleInput}
+                    checked={checkoutStatus === "On"}
+                    onChange={(e) => toggleCheckoutStatus(e.target.checked)}
+                  />
+                  <span className={styles.toggleSlider} />
+                </label>
+                <span className={styles.toggleLabel}>
+                  App embed: <strong>{checkoutStatus}</strong>
+                </span>
+              </div>
+
+              {/* Status Indicator */}
+              <div
+                className={styles.statusIndicator}
+                style={{ cursor: "pointer" }}
+                onClick={() => toggleCheckoutStatus()}
+                title="Click to toggle status"
+              >
+                <span
+                  className={`${styles.statusDot} ${
+                    checkoutStatus === "On" ? styles.statusDotActive : ""
+                  }`}
+                />
+                <span>Status: {checkoutStatus}</span>
+              </div>
             </div>
+
+            {/* Instant Toast / Feedback notice when toggled */}
+            {embedToast && (
+              <div className={styles.embedToast}>
+                {embedToast}
+              </div>
+            )}
           </div>
 
           <Link to="/app/checkout-control" className={styles.btnPrimary}>
@@ -329,7 +495,7 @@ export default function Dashboard() {
           </div>
 
           <div className={styles.riskProfileContent}>
-            {/* Left: Donut Chart with center label */}
+            {/* Left: Dynamic Donut Chart with center label */}
             <div className={styles.chartContainer}>
               <svg className={styles.chartSvg} viewBox="0 0 200 200">
                 {/* Background track circle */}
@@ -342,13 +508,7 @@ export default function Dashboard() {
                   strokeWidth="24"
                 />
 
-                {/* 
-                  Circumference = 2 * PI * 75 = 471.24
-                  Red segment: 20% = 94.25 (starts at 0)
-                  Amber segment: 32% = 150.80 (starts after 94.25)
-                  Green segment: 48% = 226.19 (starts after 94.25 + 150.80 = 245.05)
-                */}
-                {/* Red segment: 20% (High risk) */}
+                {/* Red segment: High risk */}
                 <circle
                   cx="100"
                   cy="100"
@@ -356,11 +516,12 @@ export default function Dashboard() {
                   fill="none"
                   stroke="#dc2626"
                   strokeWidth="24"
-                  strokeDasharray="94.25 471.24"
+                  strokeDasharray={`${highDash} ${CIRCUMFERENCE}`}
                   strokeDashoffset="0"
+                  style={{ transition: "stroke-dasharray 0.4s ease, stroke-dashoffset 0.4s ease" }}
                 />
 
-                {/* Amber segment: 32% (Medium risk) */}
+                {/* Amber segment: Medium risk */}
                 <circle
                   cx="100"
                   cy="100"
@@ -368,11 +529,12 @@ export default function Dashboard() {
                   fill="none"
                   stroke="#f59e0b"
                   strokeWidth="24"
-                  strokeDasharray="150.80 471.24"
-                  strokeDashoffset="-94.25"
+                  strokeDasharray={`${medDash} ${CIRCUMFERENCE}`}
+                  strokeDashoffset={medOffset}
+                  style={{ transition: "stroke-dasharray 0.4s ease, stroke-dashoffset 0.4s ease" }}
                 />
 
-                {/* Green segment: 48% (Low risk) */}
+                {/* Green segment: Low risk */}
                 <circle
                   cx="100"
                   cy="100"
@@ -380,19 +542,20 @@ export default function Dashboard() {
                   fill="none"
                   stroke="#16a34a"
                   strokeWidth="24"
-                  strokeDasharray="226.19 471.24"
-                  strokeDashoffset="-245.05"
+                  strokeDasharray={`${lowDash} ${CIRCUMFERENCE}`}
+                  strokeDashoffset={lowOffset}
+                  style={{ transition: "stroke-dasharray 0.4s ease, stroke-dashoffset 0.4s ease" }}
                 />
               </svg>
 
               <div className={styles.chartCenterLabel}>
-                <h3 className={styles.chartTotal}>248</h3>
+                <h3 className={styles.chartTotal}>{currentMetrics.total}</h3>
                 <p className={styles.chartLabel}>COD orders</p>
-                <p className={styles.chartSublabel}>Last 30 days</p>
+                <p className={styles.chartSublabel}>{currentMetrics.label}</p>
               </div>
             </div>
 
-            {/* Right: 3 Risk Profile Cards */}
+            {/* Right: 3 Dynamic Risk Profile Cards */}
             <div className={styles.profileCardsList}>
               {/* Low risk profile */}
               <Link to="/app/risk-orders?risk=low" className={`${styles.profileCard} ${styles.profileCardLow}`}>
@@ -400,7 +563,9 @@ export default function Dashboard() {
                   <span className={`${styles.profileDot} ${styles.dotLow}`} />
                   <div>
                     <h4 className={styles.profileTitle}>Low risk profile</h4>
-                    <p className={styles.profileCount}>120 orders (48%)</p>
+                    <p className={styles.profileCount}>
+                      {currentMetrics.low} orders ({currentMetrics.lowPercent}%)
+                    </p>
                   </div>
                 </div>
                 <span className={styles.chevronIcon}>›</span>
@@ -412,7 +577,9 @@ export default function Dashboard() {
                   <span className={`${styles.profileDot} ${styles.dotMedium}`} />
                   <div>
                     <h4 className={styles.profileTitle}>Medium risk profile</h4>
-                    <p className={styles.profileCount}>80 orders (32%)</p>
+                    <p className={styles.profileCount}>
+                      {currentMetrics.med} orders ({currentMetrics.medPercent}%)
+                    </p>
                   </div>
                 </div>
                 <span className={styles.chevronIcon}>›</span>
@@ -424,7 +591,9 @@ export default function Dashboard() {
                   <span className={`${styles.profileDot} ${styles.dotHigh}`} />
                   <div>
                     <h4 className={styles.profileTitle}>High risk profile</h4>
-                    <p className={styles.profileCount}>48 orders (20%)</p>
+                    <p className={styles.profileCount}>
+                      {currentMetrics.high} orders ({currentMetrics.highPercent}%)
+                    </p>
                   </div>
                 </div>
                 <span className={styles.chevronIcon}>›</span>
