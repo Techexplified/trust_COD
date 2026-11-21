@@ -1,34 +1,59 @@
-import { useState, useMemo } from "react";
-import { Link } from "react-router";
+import { useState, useMemo, useEffect } from "react";
+import { Link, useLoaderData, useFetcher } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../../shopify.server";
+import { getContactSheetData, updateOrderAction, syncShopifyOrders } from "../../services/orders.server";
 import styles from "./styles.module.css";
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
+  const shop = session?.shop || "default";
+
+  // Sync recent orders from Shopify
+  await syncShopifyOrders(admin, shop);
+
+  const data = await getContactSheetData(shop);
+  return { ...data, shop };
+};
+
+export const action = async ({ request }) => {
+  const { session, admin } = await authenticate.admin(request);
+  const shop = session?.shop || "default";
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  if (intent === "update_outcome") {
+    const orderId = formData.get("orderId");
+    const outcome = formData.get("outcome");
+    const updated = await updateOrderAction(shop, orderId, outcome, admin);
+    return { ok: true, orderId, outcome, updated };
+  }
+
   return null;
 };
 
-const INITIAL_ORDERS = [
-  { id: "#1048", phone: "+91 98765 43210", risk: "High", reason: "Incomplete address", status: "Waiting for a call", outcome: null },
-  { id: "#1047", phone: "+91 91234 56789", risk: "High", reason: "Repeat orders from same phone", status: "Waiting for a call", outcome: null },
-  { id: "#1046", phone: "+91 99887 66554", risk: "High", reason: "New customer, no history", status: "Waiting for a call", outcome: null },
-  { id: "#1045", phone: "+91 77654 32109", risk: "Medium", reason: "COD refused previously", status: "Waiting for a call", outcome: null },
-  { id: "#1044", phone: "+91 88990 12345", risk: "High", reason: "Wrong or incomplete address", status: "Waiting for a call", outcome: null },
-  { id: "#1043", phone: "+91 90123 45678", risk: "Medium", reason: "Multiple failed COD orders", status: "Waiting for a call", outcome: null },
-  { id: "#1042", phone: "+91 98712 34567", risk: "Medium", reason: "Suspicious pattern", status: "Waiting for a call", outcome: null },
-  { id: "#1041", phone: "+91 91234 09876", risk: "High", reason: "Unreachable customer", status: "Waiting for a call", outcome: null },
-  { id: "#1040", phone: "+91 99876 54321", risk: "Medium", reason: "New customer, high value", status: "Waiting for a call", outcome: null },
-  { id: "#1039", phone: "+91 88766 55443", risk: "High", reason: "Repeated address", status: "Waiting for a call", outcome: null },
-];
-
 export default function ContactSheet() {
-  const [orders, setOrders] = useState(INITIAL_ORDERS);
+  const loaderData = useLoaderData();
+  const fetcher = useFetcher();
+
+  const [orders, setOrders] = useState(loaderData.orders || []);
   const [riskFilter, setRiskFilter] = useState("all"); // "all" | "high" | "medium"
   const [statusFilter, setStatusFilter] = useState("Waiting for a call"); // "All statuses" | "Waiting for a call" | "Confirmed" | "Cancelled" | "Unreachable"
   const [openStatusMenu, setOpenStatusMenu] = useState(false);
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [activePage, setActivePage] = useState(1);
+
+  // Sync state if loader re-runs
+  useEffect(() => {
+    if (loaderData.orders) {
+      setOrders(loaderData.orders);
+    }
+  }, [loaderData.orders]);
+
+  // Dynamic filter counts
+  const highCount = useMemo(() => orders.filter((o) => o.risk === "High").length, [orders]);
+  const mediumCount = useMemo(() => orders.filter((o) => o.risk === "Medium").length, [orders]);
+  const allCount = orders.length;
 
   // Filtered orders
   const filteredOrders = useMemo(() => {
@@ -47,25 +72,33 @@ export default function ContactSheet() {
   }, [orders, riskFilter, statusFilter]);
 
   const handleSelectOutcome = (orderId, outcome) => {
+    let newStatus = "Waiting for a call";
+    if (outcome === "Confirmed") newStatus = "Confirmed";
+    else if (outcome === "Cancelled") newStatus = "Cancelled";
+    else if (outcome === "Unreachable") newStatus = "Unreachable";
+    else if (outcome === "Mark safe") newStatus = "Confirmed";
+
+    // Optimistic UI update
     setOrders((prev) =>
       prev.map((order) => {
         if (order.id === orderId) {
-          let newStatus = order.status;
-          if (outcome === "Confirmed") newStatus = "Confirmed";
-          else if (outcome === "Cancelled") newStatus = "Cancelled";
-          else if (outcome === "Unreachable") newStatus = "Unreachable";
-          else if (outcome === "Mark safe") newStatus = "Confirmed";
-
           return {
             ...order,
             outcome,
             status: newStatus,
+            risk: outcome === "Mark safe" ? "Low" : order.risk,
           };
         }
         return order;
       })
     );
     setOpenDropdownId(null);
+
+    // Persist to Neon PostgreSQL & tag order in Shopify
+    fetcher.submit(
+      { intent: "update_outcome", orderId, outcome },
+      { method: "POST" }
+    );
   };
 
   const handleDownloadCSV = () => {
@@ -81,6 +114,12 @@ export default function ContactSheet() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const summary = loaderData.summary || {
+    waitingForCall: 0,
+    confirmedToday: 0,
+    cancelledSaved: 0,
   };
 
   return (
@@ -109,7 +148,7 @@ export default function ContactSheet() {
           <div className={styles.headerText}>
             <h1 className={styles.title}>Contact sheet</h1>
             <p className={styles.subtitle}>
-              High and medium risk COD orders to confirm before shipping.
+              High and medium risk COD orders from your store to confirm before shipping.
             </p>
           </div>
 
@@ -163,7 +202,7 @@ export default function ContactSheet() {
             </div>
             <div className={styles.summaryContent}>
               <h4 className={styles.summaryLabel}>Waiting for a call</h4>
-              <p className={styles.summaryValue}>24</p>
+              <p className={styles.summaryValue}>{summary.waitingForCall}</p>
               <p className={styles.summarySub}>COD orders</p>
             </div>
           </div>
@@ -184,7 +223,7 @@ export default function ContactSheet() {
             </div>
             <div className={styles.summaryContent}>
               <h4 className={styles.summaryLabel}>Confirmed</h4>
-              <p className={styles.summaryValue}>18</p>
+              <p className={styles.summaryValue}>{summary.confirmedToday}</p>
               <p className={styles.summarySub}>COD orders</p>
             </div>
           </div>
@@ -203,8 +242,8 @@ export default function ContactSheet() {
               </svg>
             </div>
             <div className={styles.summaryContent}>
-              <h4 className={styles.summaryLabel}>Cancelled or unreachable</h4>
-              <p className={styles.summaryValue}>12</p>
+              <h4 className={styles.summaryLabel}>Cancelled / saved</h4>
+              <p className={styles.summaryValue}>{summary.cancelledSaved}</p>
               <p className={styles.summarySub}>COD orders</p>
             </div>
           </div>
@@ -219,21 +258,21 @@ export default function ContactSheet() {
               className={`${styles.filterPill} ${riskFilter === "all" ? styles.filterPillActive : ""}`}
               onClick={() => setRiskFilter("all")}
             >
-              All (54)
+              All ({allCount})
             </button>
             <button
               type="button"
               className={`${styles.filterPill} ${riskFilter === "high" ? styles.filterPillActive : ""}`}
               onClick={() => setRiskFilter("high")}
             >
-              High risk (32)
+              High risk ({highCount})
             </button>
             <button
               type="button"
               className={`${styles.filterPill} ${riskFilter === "medium" ? styles.filterPillActive : ""}`}
               onClick={() => setRiskFilter("medium")}
             >
-              Medium risk (22)
+              Medium risk ({mediumCount})
             </button>
           </div>
 
@@ -279,55 +318,53 @@ export default function ContactSheet() {
                 <tr>
                   <th className={styles.th}>Order</th>
                   <th className={styles.th}>Customer phone</th>
-                  <th className={styles.th}>Risk</th>
-                  <th className={styles.th}>Reason</th>
+                  <th className={styles.th}>Risk and reason</th>
                   <th className={styles.th}>Status</th>
-                  <th className={`${styles.th} ${styles.actionCell}`}>Call outcome</th>
+                  <th className={`${styles.th} ${styles.actionCell}`}>Log call outcome</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredOrders.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className={styles.emptyOrders}>
-                      No orders found for the selected filters.
+                    <td colSpan="5" className={styles.emptyRow}>
+                      No orders matching selected risk and status filters.
                     </td>
                   </tr>
                 ) : (
                   filteredOrders.map((order) => (
                     <tr key={order.id} className={styles.tr}>
                       <td className={`${styles.td} ${styles.orderNum}`}>{order.id}</td>
-                      <td className={`${styles.td} ${styles.phoneCell}`}>
-                        <a href={`tel:${order.phone}`} className={styles.phoneLink}>
-                          {order.phone}
-                        </a>
+                      <td className={`${styles.td} ${styles.orderPhone}`}>{order.phone}</td>
+                      <td className={styles.td}>
+                        <div className={styles.riskCell}>
+                          <span
+                            className={`${styles.riskBadge} ${
+                              order.risk === "High" ? styles.badgeHigh : styles.badgeMedium
+                            }`}
+                          >
+                            {order.risk}
+                          </span>
+                          <span className={styles.reasonText}>{order.reason}</span>
+                        </div>
                       </td>
                       <td className={styles.td}>
                         <span
-                          className={`${styles.riskBadge} ${
-                            order.risk === "High" ? styles.badgeHigh : styles.badgeMedium
-                          }`}
-                        >
-                          {order.risk}
-                        </span>
-                      </td>
-                      <td className={`${styles.td} ${styles.reasonText}`}>{order.reason}</td>
-                      <td className={styles.td}>
-                        <span
-                          className={`${styles.statusText} ${
+                          className={`${styles.statusBadge} ${
                             order.status === "Confirmed"
-                              ? styles.statusConfirmed
+                              ? styles.statusBadgeConfirmed
                               : order.status === "Cancelled"
-                              ? styles.statusCancelled
+                              ? styles.statusBadgeCancelled
                               : order.status === "Unreachable"
-                              ? styles.statusUnreachable
-                              : ""
+                              ? styles.statusBadgeUnreachable
+                              : styles.statusBadgeWaiting
                           }`}
                         >
+                          <span className={styles.statusDot} />
                           {order.status}
                         </span>
                       </td>
                       <td className={`${styles.td} ${styles.actionCell}`}>
-                        <div className={styles.dropdownWrap}>
+                        <div className={styles.outcomeWrap}>
                           <button
                             type="button"
                             className={`${styles.outcomeBtn} ${
@@ -357,7 +394,7 @@ export default function ContactSheet() {
                                 className={styles.outcomeMenuItem}
                                 onClick={() => handleSelectOutcome(order.id, "Confirmed")}
                               >
-                                <div className={`${styles.outcomeItemIcon} ${styles.iconConfirmed}`}>
+                                <div className={`${styles.menuItemIcon} ${styles.menuIconConfirmed}`}>
                                   <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
                                     <path
                                       d="M3.5 8.5L6.5 11.5L12.5 4.5"
@@ -368,9 +405,9 @@ export default function ContactSheet() {
                                     />
                                   </svg>
                                 </div>
-                                <div className={styles.outcomeItemContent}>
-                                  <div className={styles.outcomeItemTitle}>Confirmed</div>
-                                  <p className={styles.outcomeItemDesc}>Order is okay to ship</p>
+                                <div className={styles.menuItemContent}>
+                                  <div className={styles.menuItemTitle}>Confirmed</div>
+                                  <p className={styles.menuItemDesc}>Customer confirmed order on call</p>
                                 </div>
                               </button>
 
@@ -380,7 +417,7 @@ export default function ContactSheet() {
                                 className={styles.outcomeMenuItem}
                                 onClick={() => handleSelectOutcome(order.id, "Cancelled")}
                               >
-                                <div className={`${styles.outcomeItemIcon} ${styles.iconCancelled}`}>
+                                <div className={`${styles.menuItemIcon} ${styles.menuIconCancelled}`}>
                                   <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
                                     <path
                                       d="M4 4L12 12M12 4L4 12"
@@ -390,9 +427,9 @@ export default function ContactSheet() {
                                     />
                                   </svg>
                                 </div>
-                                <div className={styles.outcomeItemContent}>
-                                  <div className={styles.outcomeItemTitle}>Cancelled</div>
-                                  <p className={styles.outcomeItemDesc}>Order should not ship</p>
+                                <div className={styles.menuItemContent}>
+                                  <div className={styles.menuItemTitle}>Cancelled</div>
+                                  <p className={styles.menuItemDesc}>Customer asked to cancel order</p>
                                 </div>
                               </button>
 
@@ -402,15 +439,15 @@ export default function ContactSheet() {
                                 className={styles.outcomeMenuItem}
                                 onClick={() => handleSelectOutcome(order.id, "Unreachable")}
                               >
-                                <div className={`${styles.outcomeItemIcon} ${styles.iconUnreachable}`}>
+                                <div className={`${styles.menuItemIcon} ${styles.menuIconUnreachable}`}>
                                   <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
                                     <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.8" />
                                     <line x1="3.5" y1="3.5" x2="12.5" y2="12.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                                   </svg>
                                 </div>
-                                <div className={styles.outcomeItemContent}>
-                                  <div className={styles.outcomeItemTitle}>Unreachable</div>
-                                  <p className={styles.outcomeItemDesc}>Customer did not answer</p>
+                                <div className={styles.menuItemContent}>
+                                  <div className={styles.menuItemTitle}>Unreachable</div>
+                                  <p className={styles.menuItemDesc}>Did not answer phone, try later</p>
                                 </div>
                               </button>
 
@@ -420,7 +457,7 @@ export default function ContactSheet() {
                                 className={styles.outcomeMenuItem}
                                 onClick={() => handleSelectOutcome(order.id, "Mark safe")}
                               >
-                                <div className={`${styles.outcomeItemIcon} ${styles.iconMarkSafe}`}>
+                                <div className={`${styles.menuItemIcon} ${styles.menuIconMarkSafe}`}>
                                   <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
                                     <path
                                       d="M8 1.5L13.5 3.5V8.5C13.5 12 8 14.5 8 14.5C8 14.5 2.5 12 2.5 8.5V3.5L8 1.5Z"
@@ -430,9 +467,9 @@ export default function ContactSheet() {
                                     />
                                   </svg>
                                 </div>
-                                <div className={styles.outcomeItemContent}>
-                                  <div className={styles.outcomeItemTitle}>Mark safe</div>
-                                  <p className={styles.outcomeItemDesc}>Flag was wrong, moves to low risk</p>
+                                <div className={styles.menuItemContent}>
+                                  <div className={styles.menuItemTitle}>Mark safe</div>
+                                  <p className={styles.menuItemDesc}>Flag was wrong, move to low risk</p>
                                 </div>
                               </button>
                             </div>
@@ -446,9 +483,11 @@ export default function ContactSheet() {
             </table>
           </div>
 
-          {/* Footer Pagination */}
+          {/* Pagination Footer */}
           <div className={styles.paginationRow}>
-            <span>Showing 1–{filteredOrders.length} of 54 orders</span>
+            <span>
+              Showing {filteredOrders.length} of {orders.length} orders
+            </span>
             <div className={styles.paginationBtns}>
               <button
                 type="button"
@@ -457,7 +496,7 @@ export default function ContactSheet() {
               >
                 ‹
               </button>
-              {[1, 2, 3, 4, 5, 6].map((p) => (
+              {[1, 2, 3].map((p) => (
                 <button
                   key={p}
                   type="button"
@@ -470,7 +509,7 @@ export default function ContactSheet() {
               <button
                 type="button"
                 className={styles.pageBtn}
-                onClick={() => setActivePage((p) => Math.min(6, p + 1))}
+                onClick={() => setActivePage((p) => Math.min(3, p + 1))}
               >
                 ›
               </button>

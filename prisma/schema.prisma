@@ -5,30 +5,89 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
-// enough when changing adapters.
-// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
 datasource db {
-  provider = "sqlite"
-  url      = "file:dev.sqlite"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Session {
-  id            String    @id
-  shop          String
-  state         String
-  isOnline      Boolean   @default(false)
-  scope         String?
-  expires       DateTime?
-  accessToken   String
-  userId        BigInt?
-  firstName     String?
-  lastName      String?
-  email         String?
-  accountOwner  Boolean   @default(false)
-  locale        String?
-  collaborator  Boolean?  @default(false)
-  emailVerified Boolean?  @default(false)
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
   refreshToken        String?
   refreshTokenExpires DateTime?
+}
+
+model AppSettings {
+  id              String   @id @default(uuid())
+  shop            String   @unique
+  averageLoss     Float    @default(500)
+  appEmbedEnabled Boolean  @default(true)
+  blockedPincodes String   @default("")
+  blockedPhones   String   @default("")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model RiskRule {
+  id         String   @id
+  shop       String   @default("default")
+  title      String
+  profile    String   // "high" | "medium" | "low"
+  descType   String   @default("text")
+  desc       String?
+  orders     String?
+  hours      String?
+  multiplier String?
+  days       String?
+  units      String?
+  isEnabled  Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([shop, id])
+}
+
+model OrderRisk {
+  id              String   @id @default(uuid())
+  shop            String
+  shopifyOrderId  String?
+  orderNumber     String   // e.g. "#1048"
+  customerName    String?
+  customerPhone   String?
+  customerEmail   String?
+  shippingAddress String?
+  pincode         String?
+  city            String?
+  totalPrice      Float    @default(0)
+  currency        String   @default("INR")
+  paymentGateway  String?  @default("manual")
+  risk            String   @default("Medium") // "High" | "Medium" | "Low"
+  riskScore       Int      @default(50)
+  reason          String   @default("Review required")
+  matchedRules    String?  // JSON string
+  status          String   @default("Waiting for a call") // "Waiting for a call" | "Confirmed" | "Cancelled" | "Unreachable"
+  action          String?  // "Confirmed" | "Cancelled" | "Unreachable" | "Mark safe"
+  notes           String?
+  orderCreatedAt  DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([shop, shopifyOrderId])
+  @@index([shop, orderNumber])
+  @@index([shop, risk])
+  @@index([shop, status])
+  @@index([shop, orderCreatedAt])
 }

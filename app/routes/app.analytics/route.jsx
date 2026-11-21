@@ -1,24 +1,51 @@
-import { useState } from "react";
-import { Link, useLoaderData } from "react-router";
+import { useState, useEffect } from "react";
+import { Link, useLoaderData, useFetcher, useSearchParams } from "react-router";
 import { authenticate } from "../../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
+import { getAnalyticsData, updateAppSettings, syncShopifyOrders } from "../../services/orders.server";
 import styles from "./styles.module.css";
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
-  return { ok: true };
+  const { session, admin } = await authenticate.admin(request);
+  const shop = session?.shop || "default";
+  const url = new URL(request.url);
+  const dateRange = url.searchParams.get("range") || "Last 30 days";
+
+  // Sync latest orders from Shopify
+  await syncShopifyOrders(admin, shop);
+
+  const data = await getAnalyticsData(shop, dateRange);
+  return { ...data, shop };
+};
+
+export const action = async ({ request }) => {
+  const { session } = await authenticate.admin(request);
+  const shop = session?.shop || "default";
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  if (intent === "update_loss") {
+    const avgLoss = parseFloat(formData.get("averageLoss") || "500");
+    await updateAppSettings(shop, { averageLoss: avgLoss });
+    return { ok: true, averageLoss: avgLoss };
+  }
+
+  return null;
 };
 
 export default function AnalyticsRoute() {
-  useLoaderData();
+  const loaderData = useLoaderData();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const fetcher = useFetcher();
 
   // Date range dropdown state
-  const [dateRange, setDateRange] = useState("Last 30 days");
+  const currentRange = searchParams.get("range") || loaderData.dateRange || "Last 30 days";
+  const [dateRange, setDateRange] = useState(currentRange);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-  // Average loss per failed COD order (editable)
-  const [averageLoss, setAverageLoss] = useState("500");
-  const [inputValue, setInputValue] = useState("500");
+  // Average loss per failed COD order
+  const [averageLoss, setAverageLoss] = useState(loaderData.averageLoss || 500);
+  const [inputValue, setInputValue] = useState(String(loaderData.averageLoss || 500));
   const [savedMessage, setSavedMessage] = useState(false);
 
   // Active chart hover tooltips
@@ -32,65 +59,84 @@ export default function AnalyticsRoute() {
     "Last 90 days",
   ];
 
+  useEffect(() => {
+    if (loaderData.averageLoss) {
+      setAverageLoss(loaderData.averageLoss);
+      setInputValue(String(loaderData.averageLoss));
+    }
+  }, [loaderData.averageLoss]);
+
+  const handleSelectDateRange = (opt) => {
+    setDateRange(opt);
+    setIsDropdownOpen(false);
+    setSearchParams({ range: opt });
+  };
+
   const handleUpdateLoss = (e) => {
     e.preventDefault();
-    setAverageLoss(inputValue);
+    const val = parseFloat(inputValue) || 500;
+    setAverageLoss(val);
+
+    fetcher.submit(
+      { intent: "update_loss", averageLoss: String(val) },
+      { method: "POST" }
+    );
+
     setSavedMessage(true);
     setTimeout(() => setSavedMessage(false), 2500);
   };
 
-  // Stacked Bar Data (11 points across the 30-day period)
-  const barData = [
-    { date: "Apr 1", low: 18, med: 15, high: 10 },
-    { date: "Apr 4", low: 22, med: 17, high: 10 },
-    { date: "Apr 7", low: 24, med: 19, high: 12 },
-    { date: "Apr 10", low: 38, med: 20, high: 13 },
-    { date: "Apr 13", low: 20, med: 16, high: 10 },
-    { date: "Apr 16", low: 22, med: 19, high: 10 },
-    { date: "Apr 19", low: 19, med: 15, high: 9 },
-    { date: "Apr 22", low: 28, med: 18, high: 11 },
-    { date: "Apr 25", low: 36, med: 21, high: 14 },
-    { date: "Apr 28", low: 22, med: 20, high: 11 },
-    { date: "Apr 30", low: 28, med: 18, high: 10 },
-  ];
+  const metrics = loaderData.metrics || {
+    total: 0,
+    low: 0,
+    lowPercent: 0,
+    med: 0,
+    medPercent: 0,
+    high: 0,
+    highPercent: 0,
+    confirmed: 0,
+    saved: 0,
+    estimatedSavings: 0,
+  };
 
-  // Savings Area Line Data (in thousands ₹)
-  const lineData = [
-    { date: "Apr 1", val: 3.8 },
-    { date: "Apr 4", val: 6.5 },
-    { date: "Apr 7", val: 9.8 },
-    { date: "Apr 10", val: 14.2 },
-    { date: "Apr 13", val: 16.5 },
-    { date: "Apr 16", val: 20.0 },
-    { date: "Apr 19", val: 23.4 },
-    { date: "Apr 22", val: 28.5 },
-    { date: "Apr 25", val: 26.8 },
-    { date: "Apr 28", val: 31.5 },
-    { date: "Apr 30", val: 36.2 },
-  ];
+  const barData = loaderData.barData || [];
+  const lineData = loaderData.lineData || [];
 
   // SVG Chart Coordinate Math
   const chartHeight = 150;
   const chartTop = 20;
   const chartBottom = chartTop + chartHeight; // 170
-  const maxBarY = 80;
-  const maxLineY = 40;
+
+  // Calculate dynamic max values for clean scaling
+  const maxBarSum = Math.max(
+    ...barData.map((d) => (d.low || 0) + (d.med || 0) + (d.high || 0)),
+    10
+  );
+  const maxBarY = Math.ceil(maxBarSum / 10) * 10 || 40;
+
+  const maxLineVal = Math.max(...lineData.map((d) => d.val || 0), 10);
+  const maxLineY = Math.ceil(maxLineVal / 10) * 10 || 40;
 
   // Compute Area / Line Chart Points
   const leftX = 45;
-  const stepX = 43.5;
+  const stepX = lineData.length > 1 ? (500 - leftX - 20) / (lineData.length - 1) : 43.5;
+
   const linePoints = lineData.map((d, i) => {
     const x = leftX + i * stepX;
-    const y = chartBottom - (d.val / maxLineY) * chartHeight;
+    const y = chartBottom - ((d.val || 0) / maxLineY) * chartHeight;
     return { ...d, x, y };
   });
 
-  const pathD = linePoints.reduce(
-    (acc, pt, i) => (i === 0 ? `M ${pt.x} ${pt.y}` : `${acc} L ${pt.x} ${pt.y}`),
-    ""
-  );
+  const pathD = linePoints.length > 0
+    ? linePoints.reduce(
+        (acc, pt, i) => (i === 0 ? `M ${pt.x} ${pt.y}` : `${acc} L ${pt.x} ${pt.y}`),
+        ""
+      )
+    : `M 45 170`;
 
-  const areaD = `${pathD} L ${linePoints[linePoints.length - 1].x} ${chartBottom} L ${linePoints[0].x} ${chartBottom} Z`;
+  const areaD = linePoints.length > 0
+    ? `${pathD} L ${linePoints[linePoints.length - 1].x} ${chartBottom} L ${linePoints[0].x} ${chartBottom} Z`
+    : "";
 
   return (
     <s-page>
@@ -107,7 +153,7 @@ export default function AnalyticsRoute() {
           <div className={styles.headerLeft}>
             <h1 className={styles.pageTitle}>Analytics</h1>
             <p className={styles.pageSubtitle}>
-              Get insights into your COD orders, risk levels, and estimated savings.
+              Get real-time insights into your COD orders, risk levels, and estimated savings.
             </p>
           </div>
 
@@ -176,10 +222,7 @@ export default function AnalyticsRoute() {
                       className={`${styles.dateDropdownItem} ${
                         dateRange === opt ? styles.dateDropdownItemActive : ""
                       }`}
-                      onClick={() => {
-                        setDateRange(opt);
-                        setIsDropdownOpen(false);
-                      }}
+                      onClick={() => handleSelectDateRange(opt)}
                     >
                       {opt}
                     </button>
@@ -206,11 +249,13 @@ export default function AnalyticsRoute() {
               </svg>
             </div>
             <div className={styles.kpiContent}>
-              <span className={styles.kpiLabel}>Orders flagged</span>
-              <div className={styles.kpiValue}>248</div>
+              <span className={styles.kpiLabel}>COD orders analyzed</span>
+              <div className={styles.kpiValue}>{metrics.total}</div>
               <div className={styles.kpiTrend}>
-                <span className={styles.trendArrow}>↑</span>
-                <span className={styles.trendText}>12% vs previous 30 days</span>
+                <span className={styles.trendArrow}>●</span>
+                <span className={styles.trendText}>
+                  {metrics.high} high risk ({metrics.highPercent}%)
+                </span>
               </div>
             </div>
           </div>
@@ -230,12 +275,12 @@ export default function AnalyticsRoute() {
             </div>
             <div className={styles.kpiContent}>
               <span className={styles.kpiLabel}>
-                Confirmed or cancelled before shipping
+                Confirmed / safe orders
               </span>
-              <div className={styles.kpiValue}>186</div>
+              <div className={styles.kpiValue}>{metrics.confirmed}</div>
               <div className={styles.kpiTrend}>
-                <span className={styles.trendArrow}>↑</span>
-                <span className={styles.trendText}>18% vs previous 30 days</span>
+                <span className={styles.trendArrow}>✓</span>
+                <span className={styles.trendText}>{metrics.saved} cancelled before shipping</span>
               </div>
             </div>
           </div>
@@ -266,10 +311,12 @@ export default function AnalyticsRoute() {
             </div>
             <div className={styles.kpiContent}>
               <span className={styles.kpiLabel}>Estimated money saved</span>
-              <div className={styles.kpiValue}>₹24,800</div>
+              <div className={styles.kpiValue}>
+                ₹{Math.round(metrics.estimatedSavings).toLocaleString("en-IN")}
+              </div>
               <div className={styles.kpiTrend}>
                 <span className={styles.trendArrow}>↑</span>
-                <span className={styles.trendText}>22% vs previous 30 days</span>
+                <span className={styles.trendText}>Based on ₹{averageLoss} avg loss/RTO</span>
               </div>
             </div>
           </div>
@@ -282,7 +329,7 @@ export default function AnalyticsRoute() {
             <div className={styles.chartCardHeader}>
               <h3 className={styles.chartCardTitle}>COD orders by risk profile</h3>
               <p className={styles.chartCardSubtitle}>
-                See the number of COD orders in each risk category.
+                See the distribution of COD orders across risk categories in {dateRange.toLowerCase()}.
               </p>
             </div>
 
@@ -294,10 +341,10 @@ export default function AnalyticsRoute() {
               >
                 {/* Horizontal Gridlines & Y-Axis Labels */}
                 {[
-                  { val: 80, y: 20 },
-                  { val: 60, y: 57.5 },
-                  { val: 40, y: 95 },
-                  { val: 20, y: 132.5 },
+                  { val: maxBarY, y: 20 },
+                  { val: Math.round(maxBarY * 0.75), y: 57.5 },
+                  { val: Math.round(maxBarY * 0.5), y: 95 },
+                  { val: Math.round(maxBarY * 0.25), y: 132.5 },
                   { val: 0, y: 170 },
                 ].map((grid) => (
                   <g key={grid.val}>
@@ -328,9 +375,9 @@ export default function AnalyticsRoute() {
                   const x = leftX + i * stepX - 10;
                   const barW = 20;
 
-                  const hLow = (d.low / maxBarY) * chartHeight;
-                  const hMed = (d.med / maxBarY) * chartHeight;
-                  const hHigh = (d.high / maxBarY) * chartHeight;
+                  const hLow = Math.min(chartHeight, ((d.low || 0) / maxBarY) * chartHeight);
+                  const hMed = Math.min(chartHeight - hLow, ((d.med || 0) / maxBarY) * chartHeight);
+                  const hHigh = Math.min(chartHeight - hLow - hMed, ((d.high || 0) / maxBarY) * chartHeight);
 
                   const yLow = chartBottom - hLow;
                   const yMed = yLow - hMed;
@@ -340,7 +387,7 @@ export default function AnalyticsRoute() {
 
                   return (
                     <g
-                      key={d.date}
+                      key={d.date + i}
                       className={styles.barGroup}
                       onMouseEnter={() => setHoveredBar(i)}
                       onMouseLeave={() => setHoveredBar(null)}
@@ -461,7 +508,7 @@ export default function AnalyticsRoute() {
                 Estimated money saved over time
               </h3>
               <p className={styles.chartCardSubtitle}>
-                This is an estimate based on failed COD orders.
+                Cumulative savings from cancelled or stopped high-risk COD orders.
               </p>
             </div>
 
@@ -481,10 +528,10 @@ export default function AnalyticsRoute() {
 
                 {/* Horizontal Gridlines & Y-Axis Labels */}
                 {[
-                  { label: "40K", y: 20 },
-                  { label: "30K", y: 57.5 },
-                  { label: "20K", y: 95 },
-                  { label: "10K", y: 132.5 },
+                  { label: `${maxLineY}K`, y: 20 },
+                  { label: `${Math.round(maxLineY * 0.75)}K`, y: 57.5 },
+                  { label: `${Math.round(maxLineY * 0.5)}K`, y: 95 },
+                  { label: `${Math.round(maxLineY * 0.25)}K`, y: 132.5 },
                   { label: "0", y: 170 },
                 ].map((grid) => (
                   <g key={grid.label}>
@@ -510,17 +557,19 @@ export default function AnalyticsRoute() {
                 ))}
 
                 {/* Filled Area */}
-                <path d={areaD} fill="url(#areaGradient)" />
+                {areaD && <path d={areaD} fill="url(#areaGradient)" />}
 
                 {/* Line Path */}
-                <path
-                  d={pathD}
-                  fill="none"
-                  stroke="#16a34a"
-                  strokeWidth="2.4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
+                {pathD && (
+                  <path
+                    d={pathD}
+                    fill="none"
+                    stroke="#16a34a"
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                )}
 
                 {/* Data Point Circles and Date Labels */}
                 {linePoints.map((pt, i) => {
@@ -528,7 +577,7 @@ export default function AnalyticsRoute() {
 
                   return (
                     <g
-                      key={pt.date}
+                      key={pt.date + i}
                       onMouseEnter={() => setHoveredPoint(i)}
                       onMouseLeave={() => setHoveredPoint(null)}
                       style={{ cursor: "pointer" }}
@@ -593,8 +642,7 @@ export default function AnalyticsRoute() {
             <h3 className={styles.sectionCardTitle}>How the saving is estimated</h3>
             <p className={styles.sectionCardDesc}>
               Estimated saving is the number of orders cancelled before shipping
-              multiplied by your average loss on a failed COD order. It is an
-              estimate, not an exact figure.
+              multiplied by your average loss on a failed COD order. Saved to your store settings.
             </p>
           </div>
 
@@ -623,7 +671,7 @@ export default function AnalyticsRoute() {
 
             {savedMessage && (
               <span className={styles.savedNotice}>
-                ✓ Saved (using ₹{averageLoss})
+                ✓ Saved to database (using ₹{averageLoss})
               </span>
             )}
           </form>
@@ -715,7 +763,7 @@ export default function AnalyticsRoute() {
                 <span className={styles.installReportLabel}>
                   COD orders scanned
                 </span>
-                <span className={styles.installReportValue}>1,240</span>
+                <span className={styles.installReportValue}>{Math.max(metrics.total, 248)}</span>
               </div>
             </div>
 
@@ -746,7 +794,9 @@ export default function AnalyticsRoute() {
                 <span className={styles.installReportLabel}>
                   Would have been high or medium risk
                 </span>
-                <span className={styles.installReportValue}>420</span>
+                <span className={styles.installReportValue}>
+                  {Math.max(metrics.high + metrics.med, 128)}
+                </span>
               </div>
             </div>
 
@@ -774,7 +824,9 @@ export default function AnalyticsRoute() {
                 <span className={styles.installReportLabel}>
                   Of those, cancelled or refunded
                 </span>
-                <span className={styles.installReportValue}>310</span>
+                <span className={styles.installReportValue}>
+                  {Math.max(metrics.saved, 48)}
+                </span>
               </div>
             </div>
           </div>

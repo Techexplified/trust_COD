@@ -1,146 +1,57 @@
-import { useState } from "react";
-import { Link } from "react-router";
+import { useState, useEffect } from "react";
+import { Link, useLoaderData, useFetcher } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../../shopify.server";
+import { getRulesForShop, updateRulesForShop, resetRulesForShop } from "../../services/rules.server";
 import styles from "./styles.module.css";
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
+  const shop = session?.shop || "default";
+  const rules = await getRulesForShop(shop);
+  return { rules, shop };
+};
+
+export const action = async ({ request }) => {
+  const { session } = await authenticate.admin(request);
+  const shop = session?.shop || "default";
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  if (intent === "save_rules") {
+    const rulesJson = formData.get("rules");
+    const rules = JSON.parse(rulesJson || "[]");
+    const updated = await updateRulesForShop(shop, rules);
+    return { ok: true, rules: updated, message: "Rules saved successfully" };
+  }
+
+  if (intent === "reset_rules") {
+    const updated = await resetRulesForShop(shop);
+    return { ok: true, rules: updated, message: "Rules reset to defaults" };
+  }
+
   return null;
 };
 
-const DEFAULT_RULES = [
-  // High risk
-  {
-    id: "bad_history",
-    title: "Bad history on this phone number",
-    descType: "text",
-    desc: "An earlier COD order from this number was refused, cancelled by the customer, or marked as fraud.",
-    profile: "high",
-  },
-  {
-    id: "blocked_list",
-    title: "On your blocked list",
-    descType: "text",
-    desc: "The phone number or pincode is on the blocked list you manage in Checkout COD control.",
-    profile: "high",
-  },
-  {
-    id: "fake_phone",
-    title: "Fake looking phone number",
-    descType: "text",
-    desc: "Not a valid 10 digit Indian mobile number, or repeated digits or a simple sequence.",
-    profile: "high",
-  },
-  {
-    id: "gibberish",
-    title: "Gibberish or test details",
-    descType: "text",
-    desc: "Random characters or test words in the name or address.",
-    profile: "high",
-  },
-  {
-    id: "pincode_problem",
-    title: "Pincode problem",
-    descType: "text",
-    desc: "The pincode is invalid, or does not match the city and state.",
-    profile: "high",
-  },
-  {
-    id: "order_burst",
-    title: "Order burst",
-    descType: "order_burst",
-    orders: "3",
-    hours: "24",
-    profile: "high",
-  },
-  {
-    id: "stacked_warnings",
-    title: "Stacked warnings",
-    descType: "text",
-    desc: "Two or more medium risk rules match the same order. This rule is always on.",
-    profile: "high",
-  },
-
-  // Medium risk
-  {
-    id: "high_value_first",
-    title: "High value first order",
-    descType: "high_value",
-    multiplier: "2",
-    profile: "medium",
-  },
-  {
-    id: "weak_address",
-    title: "Weak address",
-    descType: "text",
-    desc: "No house or flat number, or a very short address.",
-    profile: "medium",
-  },
-  {
-    id: "repeat_order",
-    title: "Repeat order",
-    descType: "repeat_order",
-    hours: "24",
-    profile: "medium",
-  },
-  {
-    id: "mixed_identity",
-    title: "Mixed identity",
-    descType: "mixed_identity",
-    days: "30",
-    profile: "medium",
-  },
-  {
-    id: "disposable_email",
-    title: "Disposable email",
-    descType: "text",
-    desc: "The email uses a known throwaway domain.",
-    profile: "medium",
-  },
-  {
-    id: "unusual_quantity",
-    title: "Unusual quantity",
-    descType: "unusual_quantity",
-    units: "",
-    profile: "medium",
-  },
-  {
-    id: "weak_pincode",
-    title: "Weak pincode",
-    descType: "weak_pincode",
-    orders: "20",
-    profile: "medium",
-  },
-
-  // Low risk
-  {
-    id: "trusted_returning",
-    title: "Trusted returning customers",
-    descType: "text",
-    desc: "A repeat customer with at least one delivered COD order skips the medium risk rules that apply to new customers, such as the high value first order. High risk rules still apply.",
-    profile: "low",
-  },
-  {
-    id: "complete_address",
-    title: "Complete address and valid pincode",
-    descType: "text",
-    desc: "All required address fields are present and the pincode matches the city and state.",
-    profile: "low",
-  },
-  {
-    id: "normal_pattern",
-    title: "Order pattern looks normal",
-    descType: "text",
-    desc: "No burst of recent COD orders and no repeated failed COD history.",
-    profile: "low",
-  },
-];
-
 export default function RiskRules() {
-  const [rules, setRules] = useState(DEFAULT_RULES);
+  const loaderData = useLoaderData();
+  const fetcher = useFetcher();
+
+  const [rules, setRules] = useState(loaderData.rules || []);
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("✔ Changes saved successfully");
+
+  // Keep rules updated from loaderData or fetcher response
+  useEffect(() => {
+    if (fetcher.data?.rules) {
+      setRules(fetcher.data.rules);
+      setToastMessage(fetcher.data.message || "✔ Changes saved successfully");
+      setShowToast(true);
+      const timer = setTimeout(() => setShowToast(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [fetcher.data]);
 
   // Group rules by profile
   const highRules = rules.filter((r) => r.profile === "high");
@@ -161,13 +72,15 @@ export default function RiskRules() {
   };
 
   const handleReset = () => {
-    setRules(DEFAULT_RULES);
+    fetcher.submit({ intent: "reset_rules" }, { method: "POST" });
     setOpenDropdownId(null);
   };
 
   const handleSave = () => {
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3000);
+    fetcher.submit(
+      { intent: "save_rules", rules: JSON.stringify(rules) },
+      { method: "POST" }
+    );
   };
 
   const renderRuleDescription = (rule) => {
@@ -179,14 +92,14 @@ export default function RiskRules() {
             <input
               type="text"
               className={styles.inlineInput}
-              value={rule.orders}
+              value={rule.orders || ""}
               onChange={(e) => handleInputChange(rule.id, "orders", e.target.value)}
             />
             <span>or more within</span>
             <input
               type="text"
               className={styles.inlineInput}
-              value={rule.hours}
+              value={rule.hours || ""}
               onChange={(e) => handleInputChange(rule.id, "hours", e.target.value)}
             />
             <span>hours.</span>
@@ -200,7 +113,7 @@ export default function RiskRules() {
             <input
               type="text"
               className={styles.inlineInput}
-              value={rule.multiplier}
+              value={rule.multiplier || ""}
               onChange={(e) => handleInputChange(rule.id, "multiplier", e.target.value)}
             />
             <span>times the median.</span>
@@ -214,7 +127,7 @@ export default function RiskRules() {
             <input
               type="text"
               className={styles.inlineInput}
-              value={rule.hours}
+              value={rule.hours || ""}
               onChange={(e) => handleInputChange(rule.id, "hours", e.target.value)}
             />
             <span>hours.</span>
@@ -224,11 +137,11 @@ export default function RiskRules() {
       case "mixed_identity":
         return (
           <div className={styles.ruleDesc}>
-            <span>The same phone number appears with different names or addresses in the last</span>
+            <span>The same phone number was used with a different customer name within the last</span>
             <input
               type="text"
               className={styles.inlineInput}
-              value={rule.days}
+              value={rule.days || ""}
               onChange={(e) => handleInputChange(rule.id, "days", e.target.value)}
             />
             <span>days.</span>
@@ -238,29 +151,29 @@ export default function RiskRules() {
       case "unusual_quantity":
         return (
           <div className={styles.ruleDesc}>
-            <span>A very large quantity of one item. More than</span>
+            <span>A COD order has more than</span>
             <input
               type="text"
-              className={`${styles.inlineInput} ${styles.inlineInputWide}`}
-              placeholder="number"
-              value={rule.units}
+              className={styles.inlineInput}
+              value={rule.units || ""}
+              placeholder="e.g. 5"
               onChange={(e) => handleInputChange(rule.id, "units", e.target.value)}
             />
-            <span>units.</span>
+            <span>units of the same item.</span>
           </div>
         );
 
       case "weak_pincode":
         return (
           <div className={styles.ruleDesc}>
-            <span>Past COD orders to this pincode failed far more often than your store average. Starts after enough orders:</span>
+            <span>A pincode with low delivery success in your store (at least</span>
             <input
               type="text"
               className={styles.inlineInput}
-              value={rule.orders}
+              value={rule.orders || ""}
               onChange={(e) => handleInputChange(rule.id, "orders", e.target.value)}
             />
-            <span>orders.</span>
+            <span>past COD orders).</span>
           </div>
         );
 
@@ -270,73 +183,87 @@ export default function RiskRules() {
   };
 
   const renderRuleRow = (rule) => {
-    const profileLabel =
-      rule.profile === "high"
-        ? "High"
-        : rule.profile === "medium"
-        ? "Medium"
-        : "Low";
-
-    const btnClass =
-      rule.profile === "high"
-        ? styles.btnHigh
-        : rule.profile === "medium"
-        ? styles.btnMedium
-        : styles.btnLow;
-
-    const dotClass =
-      rule.profile === "high"
-        ? styles.dotHigh
-        : rule.profile === "medium"
-        ? styles.dotMedium
-        : styles.dotLow;
+    const isStackedRule = rule.id === "stacked_warnings";
 
     return (
       <div key={rule.id} className={styles.ruleRow}>
+        {/* Left: Title + Description */}
         <div className={styles.ruleContent}>
-          <h4 className={styles.ruleTitle}>{rule.title}</h4>
+          <h3 className={styles.ruleTitle}>{rule.title}</h3>
           {renderRuleDescription(rule)}
         </div>
 
-        <div className={styles.dropdownWrap}>
-          <button
-            type="button"
-            className={`${styles.dropdownBtn} ${btnClass}`}
-            onClick={() =>
-              setOpenDropdownId((prev) => (prev === rule.id ? null : rule.id))
-            }
-          >
-            <span className={`${styles.dot} ${dotClass}`} />
-            <span>{profileLabel}</span>
-            <span className={styles.dropdownArrow}>▼</span>
-          </button>
+        {/* Right: Profile Selector */}
+        <div className={styles.ruleAction}>
+          {isStackedRule ? (
+            <div className={styles.alwaysOnTag}>
+              <span className={styles.alwaysOnDot} />
+              <span>Always high risk</span>
+            </div>
+          ) : (
+            <div className={styles.dropdownWrap}>
+              <button
+                type="button"
+                className={styles.dropdownTrigger}
+                onClick={() =>
+                  setOpenDropdownId(openDropdownId === rule.id ? null : rule.id)
+                }
+              >
+                <div className={styles.dropdownTriggerLeft}>
+                  <span
+                    className={`${styles.dot} ${
+                      rule.profile === "high"
+                        ? styles.dotHigh
+                        : rule.profile === "medium"
+                        ? styles.dotMedium
+                        : styles.dotLow
+                    }`}
+                  />
+                  <span>
+                    {rule.profile === "high"
+                      ? "High risk"
+                      : rule.profile === "medium"
+                      ? "Medium risk"
+                      : "Low risk"}
+                  </span>
+                </div>
+                <span className={styles.arrowDown}>▼</span>
+              </button>
 
-          {openDropdownId === rule.id && (
-            <div className={styles.dropdownMenu}>
-              <button
-                type="button"
-                className={styles.dropdownItem}
-                onClick={() => handleProfileChange(rule.id, "high")}
-              >
-                <span className={`${styles.dot} ${styles.dotHigh}`} />
-                <span>High</span>
-              </button>
-              <button
-                type="button"
-                className={styles.dropdownItem}
-                onClick={() => handleProfileChange(rule.id, "medium")}
-              >
-                <span className={`${styles.dot} ${styles.dotMedium}`} />
-                <span>Medium</span>
-              </button>
-              <button
-                type="button"
-                className={styles.dropdownItem}
-                onClick={() => handleProfileChange(rule.id, "low")}
-              >
-                <span className={`${styles.dot} ${styles.dotLow}`} />
-                <span>Low</span>
-              </button>
+              {openDropdownId === rule.id && (
+                <div className={styles.dropdownMenu}>
+                  <button
+                    type="button"
+                    className={`${styles.dropdownItem} ${
+                      rule.profile === "high" ? styles.dropdownItemActive : ""
+                    }`}
+                    onClick={() => handleProfileChange(rule.id, "high")}
+                  >
+                    <span className={`${styles.dot} ${styles.dotHigh}`} />
+                    <span>High risk</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.dropdownItem} ${
+                      rule.profile === "medium" ? styles.dropdownItemActive : ""
+                    }`}
+                    onClick={() => handleProfileChange(rule.id, "medium")}
+                  >
+                    <span className={`${styles.dot} ${styles.dotMedium}`} />
+                    <span>Medium risk</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.dropdownItem} ${
+                      rule.profile === "low" ? styles.dropdownItemActive : ""
+                    }`}
+                    onClick={() => handleProfileChange(rule.id, "low")}
+                  >
+                    <span className={`${styles.dot} ${styles.dotLow}`} />
+                    <span>Low risk</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -365,12 +292,14 @@ export default function RiskRules() {
           </svg>
         </Link>
 
-        {/* Header */}
+        {/* Header Row */}
         <div className={styles.headerRow}>
-          <h1 className={styles.title}>Risk rules</h1>
-          <p className={styles.subtitle}>
-            Choose which signals make an order high, medium, or low risk. You can move any rule between profiles.
-          </p>
+          <div>
+            <h1 className={styles.title}>Risk rules</h1>
+            <p className={styles.subtitle}>
+              Adjust which rules put an order into high, medium, or low risk. Changes apply to all new COD orders.
+            </p>
+          </div>
         </div>
 
         {/* ── High Risk Section ── */}
@@ -450,18 +379,28 @@ export default function RiskRules() {
 
         {/* Footer Actions */}
         <div className={styles.footerRow}>
-          <button type="button" className={styles.btnReset} onClick={handleReset}>
+          <button
+            type="button"
+            className={styles.btnReset}
+            onClick={handleReset}
+            disabled={fetcher.state === "submitting"}
+          >
             Reset to defaults
           </button>
-          <button type="button" className={styles.btnSave} onClick={handleSave}>
-            Save changes
+          <button
+            type="button"
+            className={styles.btnSave}
+            onClick={handleSave}
+            disabled={fetcher.state === "submitting"}
+          >
+            {fetcher.state === "submitting" ? "Saving..." : "Save changes"}
           </button>
         </div>
 
         {/* Toast confirmation */}
         {showToast && (
           <div className={styles.toastSuccess}>
-            ✔ Changes saved successfully
+            {toastMessage}
           </div>
         )}
       </div>

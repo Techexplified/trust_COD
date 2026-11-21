@@ -1,78 +1,104 @@
-import { useState, useMemo } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useState, useMemo, useEffect } from "react";
+import { Link, useSearchParams, useLoaderData, useFetcher } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../../shopify.server";
+import { getRiskOrders, updateOrderAction, syncShopifyOrders } from "../../services/orders.server";
 import styles from "./styles.module.css";
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
-  return null;
+  const { session, admin } = await authenticate.admin(request);
+  const shop = session?.shop || "default";
+  const url = new URL(request.url);
+  const risk = url.searchParams.get("risk") || "high";
+  const search = url.searchParams.get("search") || "";
+  const page = parseInt(url.searchParams.get("page") || "1", 10);
+
+  // Sync recent orders from Shopify
+  await syncShopifyOrders(admin, shop);
+
+  // Fetch orders from Neon PostgreSQL
+  const data = await getRiskOrders(shop, { risk, search, page, limit: 8 });
+
+  return {
+    ...data,
+    currentRisk: risk,
+    searchQuery: search,
+    activePage: page,
+    shop,
+  };
 };
 
-const ORDERS_DATA = {
-  high: [
-    { id: "#1048", date: "May 12, 2024", phone: "+91 98765 43210", value: "₹1,299", risk: "High", reason: "Incomplete address" },
-    { id: "#1047", date: "May 12, 2024", phone: "+91 91234 56789", value: "₹799", risk: "High", reason: "Repeat orders from same phone" },
-    { id: "#1046", date: "May 11, 2024", phone: "+91 99887 66554", value: "₹1,499", risk: "High", reason: "New customer, no history" },
-    { id: "#1045", date: "May 11, 2024", phone: "+91 77654 32109", value: "₹699", risk: "High", reason: "COD refused previously" },
-    { id: "#1044", date: "May 10, 2024", phone: "+91 88990 12345", value: "₹1,199", risk: "High", reason: "Wrong or incomplete address" },
-    { id: "#1043", date: "May 10, 2024", phone: "+91 90123 45678", value: "₹899", risk: "High", reason: "Multiple failed COD orders" },
-    { id: "#1042", date: "May 09, 2024", phone: "+91 98712 34567", value: "₹1,599", risk: "High", reason: "Suspicious pattern" },
-    { id: "#1041", date: "May 09, 2024", phone: "+91 91234 09876", value: "₹749", risk: "High", reason: "Unreachable customer" },
-  ],
-  medium: [
-    { id: "#1040", date: "May 09, 2024", phone: "+91 94567 12340", value: "₹1,099", risk: "Medium", reason: "First-time COD order" },
-    { id: "#1039", date: "May 08, 2024", phone: "+91 93210 98765", value: "₹1,350", risk: "Medium", reason: "High cart value for COD" },
-    { id: "#1038", date: "May 08, 2024", phone: "+91 91122 33445", value: "₹850", risk: "Medium", reason: "Address pin code mismatch" },
-    { id: "#1037", date: "May 07, 2024", phone: "+91 97788 99001", value: "₹620", risk: "Medium", reason: "Order placed late night" },
-    { id: "#1036", date: "May 07, 2024", phone: "+91 95544 33221", value: "₹1,800", risk: "Medium", reason: "Multiple items in first order" },
-    { id: "#1035", date: "May 06, 2024", phone: "+91 92233 44556", value: "₹999", risk: "Medium", reason: "Unverified phone number" },
-    { id: "#1034", date: "May 06, 2024", phone: "+91 96677 88990", value: "₹720", risk: "Medium", reason: "Frequent address changes" },
-    { id: "#1033", date: "May 05, 2024", phone: "+91 93344 55667", value: "₹1,150", risk: "Medium", reason: "Slow delivery zone" },
-  ],
-  low: [
-    { id: "#1032", date: "May 05, 2024", phone: "+91 98877 66554", value: "₹599", risk: "Low", reason: "Verified repeat buyer" },
-    { id: "#1031", date: "May 04, 2024", phone: "+91 91234 56780", value: "₹1,240", risk: "Low", reason: "Delivered previous 3 orders" },
-    { id: "#1030", date: "May 04, 2024", phone: "+91 97766 55443", value: "₹899", risk: "Low", reason: "Complete address verified" },
-    { id: "#1029", date: "May 03, 2024", phone: "+91 94455 66778", value: "₹450", risk: "Low", reason: "Regular customer" },
-    { id: "#1028", date: "May 03, 2024", phone: "+91 93322 11009", value: "₹1,500", risk: "Low", reason: "Prepaid history on store" },
-    { id: "#1027", date: "May 02, 2024", phone: "+91 92211 00998", value: "₹799", risk: "Low", reason: "High delivery success area" },
-    { id: "#1026", date: "May 02, 2024", phone: "+91 91100 99887", value: "₹1,100", risk: "Low", reason: "Confirmed via OTP" },
-    { id: "#1025", date: "May 01, 2024", phone: "+91 90099 88776", value: "₹650", risk: "Low", reason: "Fast response on WhatsApp" },
-  ],
+export const action = async ({ request }) => {
+  const { session, admin } = await authenticate.admin(request);
+  const shop = session?.shop || "default";
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  if (intent === "update_action") {
+    const orderId = formData.get("orderId");
+    const chosenAction = formData.get("action");
+    const updated = await updateOrderAction(shop, orderId, chosenAction, admin);
+    return { ok: true, orderId, action: chosenAction, updated };
+  }
+
+  if (intent === "sync_orders") {
+    await syncShopifyOrders(admin, shop);
+    return { ok: true, synced: true };
+  }
+
+  return null;
 };
 
 const RISK_CONFIG = {
   high: {
     title: "High risk orders",
-    subtitle: "Showing 48 high risk COD orders. These orders have a higher chance of failing.",
-    totalCount: 48,
+    subtitle: "These orders have a higher chance of failing or being refused upon delivery.",
     badgeClass: styles.badgeHigh,
   },
   medium: {
     title: "Medium risk orders",
-    subtitle: "Showing 80 medium risk COD orders. These orders need a quick review before shipping.",
-    totalCount: 80,
+    subtitle: "These orders need a quick review or customer call before shipping.",
     badgeClass: styles.badgeMedium,
   },
   low: {
     title: "Low risk orders",
-    subtitle: "Showing 120 low risk COD orders. These orders look safe to fulfill.",
-    totalCount: 120,
+    subtitle: "These orders have verified details and look safe to fulfill.",
     badgeClass: styles.badgeLow,
   },
 };
 
 export default function RiskOrders() {
+  const loaderData = useLoaderData();
   const [searchParams, setSearchParams] = useSearchParams();
-  const currentRisk = searchParams.get("risk") || "high";
+  const fetcher = useFetcher();
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [openDropdownId, setOpenDropdownId] = useState(null);
-  const [activePage, setActivePage] = useState(1);
-  const [orderActions, setOrderActions] = useState({});
-
+  const currentRisk = searchParams.get("risk") || loaderData.currentRisk || "high";
   const activeCategory = ["low", "medium", "high"].includes(currentRisk) ? currentRisk : "high";
+
+  const [searchQuery, setSearchQuery] = useState(loaderData.searchQuery || "");
+  const [openDropdownId, setOpenDropdownId] = useState(null);
+  const [activePage, setActivePage] = useState(loaderData.activePage || 1);
+  const [orderActions, setOrderActions] = useState({});
+  const [syncToast, setSyncToast] = useState("");
+
+  // Sync local action state from database loader data
+  useEffect(() => {
+    if (loaderData.orders) {
+      const actionsMap = {};
+      loaderData.orders.forEach((o) => {
+        if (o.action) actionsMap[o.id] = o.action;
+      });
+      setOrderActions((prev) => ({ ...actionsMap, ...prev }));
+    }
+  }, [loaderData.orders]);
+
+  // Handle fetcher toast feedback
+  useEffect(() => {
+    if (fetcher.data?.synced) {
+      setSyncToast("✓ Orders synced with Shopify");
+      setTimeout(() => setSyncToast(""), 3000);
+    }
+  }, [fetcher.data]);
 
   const handleSelectRisk = (risk) => {
     setSearchParams({ risk });
@@ -81,26 +107,43 @@ export default function RiskOrders() {
   };
 
   const handleSelectAction = (orderId, actionName) => {
+    // Optimistic UI update
     setOrderActions((prev) => ({
       ...prev,
       [orderId]: actionName,
     }));
     setOpenDropdownId(null);
+
+    // Persist to Neon PostgreSQL & sync with Shopify
+    fetcher.submit(
+      { intent: "update_action", orderId, action: actionName },
+      { method: "POST" }
+    );
   };
 
-  const currentList = ORDERS_DATA[activeCategory] || [];
+  const handleSyncShopify = () => {
+    fetcher.submit({ intent: "sync_orders" }, { method: "POST" });
+  };
+
+  const ordersList = loaderData.orders || [];
 
   const filteredOrders = useMemo(() => {
-    if (!searchQuery.trim()) return currentList;
+    if (!searchQuery.trim()) return ordersList;
     const q = searchQuery.toLowerCase();
-    return currentList.filter(
+    return ordersList.filter(
       (order) =>
         order.id.toLowerCase().includes(q) ||
-        order.phone.toLowerCase().includes(q) ||
-        order.reason.toLowerCase().includes(q) ||
-        order.date.toLowerCase().includes(q)
+        (order.phone && order.phone.toLowerCase().includes(q)) ||
+        (order.reason && order.reason.toLowerCase().includes(q)) ||
+        (order.date && order.date.toLowerCase().includes(q))
     );
-  }, [currentList, searchQuery]);
+  }, [ordersList, searchQuery]);
+
+  const counts = loaderData.counts || {
+    low: { count: 0, percent: 0 },
+    medium: { count: 0, percent: 0 },
+    high: { count: 0, percent: 0 },
+  };
 
   const toggleDropdown = (id) => {
     setOpenDropdownId((prev) => (prev === id ? null : id));
@@ -109,34 +152,91 @@ export default function RiskOrders() {
   return (
     <s-page heading="Trust COD">
       <div className={styles.container}>
-        {/* Back navigation */}
-        <Link
-          to="/app"
-          className={styles.backArrow}
-          aria-label="Back to dashboard"
-          title="Back to dashboard"
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M19 12H5M5 12L12 19M5 12L12 5"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </Link>
+        {/* Back navigation & Actions row */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <Link
+            to="/app"
+            className={styles.backArrow}
+            aria-label="Back to dashboard"
+            title="Back to dashboard"
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M19 12H5M5 12L12 19M5 12L12 5"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </Link>
+
+          <button
+            type="button"
+            onClick={handleSyncShopify}
+            disabled={fetcher.state === "submitting"}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "7px 14px",
+              background: "#ffffff",
+              border: "1px solid #d1d5db",
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 500,
+              color: "#374151",
+              cursor: "pointer",
+              transition: "all 0.15s ease",
+            }}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              style={{
+                animation: fetcher.state === "submitting" ? "spin 1s linear infinite" : "none",
+              }}
+            >
+              <path
+                d="M21 12C21 16.9706 16.9706 21 12 21C7.02944 21 3 16.9706 3 12C3 7.02944 7.02944 3 12 3C15.3013 3 18.1884 4.77973 19.7542 7.42857M21 3V8H16"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <span>{fetcher.state === "submitting" ? "Syncing..." : "Sync Shopify orders"}</span>
+          </button>
+        </div>
+
+        {syncToast && (
+          <div
+            style={{
+              padding: "10px 16px",
+              background: "#ecfdf5",
+              color: "#065f46",
+              borderRadius: 8,
+              border: "1px solid #a7f3d0",
+              fontSize: 13,
+              fontWeight: 500,
+              marginBottom: 16,
+            }}
+          >
+            {syncToast}
+          </div>
+        )}
 
         {/* Header Row */}
         <div className={styles.headerRow}>
           <div className={styles.headerText}>
             <h1 className={styles.title}>Risk profile</h1>
             <p className={styles.subtitle}>
-              See which COD orders fall in each profile, why they were flagged, and what to do next.
+              See which COD orders fall in each profile, why they were flagged by rules, and take immediate action.
             </p>
           </div>
 
-          {/* Top right green shield illustration */}
           <div className={styles.headerIllustration}>
             <svg width="140" height="80" viewBox="0 0 140 80" fill="none">
               <circle cx="90" cy="40" r="35" fill="#f0fdf4" />
@@ -155,7 +255,7 @@ export default function RiskOrders() {
           </div>
         </div>
 
-        {/* 3 Risk Profile Selection Tabs (Cards) */}
+        {/* 3 Risk Profile Selection Tabs */}
         <div className={styles.tabsGrid}>
           {/* Low risk card */}
           <div
@@ -168,7 +268,9 @@ export default function RiskOrders() {
               <span className={`${styles.tabDot} ${styles.dotLow}`} />
               <div>
                 <h3 className={styles.tabTitle}>Low risk</h3>
-                <p className={styles.tabCount}>120 orders (48%)</p>
+                <p className={styles.tabCount}>
+                  {counts.low.count} orders ({counts.low.percent}%)
+                </p>
               </div>
             </div>
             <span className={styles.chevronIcon}>›</span>
@@ -185,7 +287,9 @@ export default function RiskOrders() {
               <span className={`${styles.tabDot} ${styles.dotMedium}`} />
               <div>
                 <h3 className={styles.tabTitle}>Medium risk</h3>
-                <p className={styles.tabCount}>80 orders (32%)</p>
+                <p className={styles.tabCount}>
+                  {counts.medium.count} orders ({counts.medium.percent}%)
+                </p>
               </div>
             </div>
             <span className={styles.chevronIcon}>›</span>
@@ -202,7 +306,9 @@ export default function RiskOrders() {
               <span className={`${styles.tabDot} ${styles.dotHigh}`} />
               <div>
                 <h3 className={styles.tabTitle}>High risk</h3>
-                <p className={styles.tabCount}>48 orders (20%)</p>
+                <p className={styles.tabCount}>
+                  {counts.high.count} orders ({counts.high.percent}%)
+                </p>
               </div>
             </div>
             <span className={styles.chevronIcon}>›</span>
@@ -214,7 +320,9 @@ export default function RiskOrders() {
           <div className={styles.tableHeaderRow}>
             <div>
               <h2 className={styles.tableTitle}>{RISK_CONFIG[activeCategory].title}</h2>
-              <p className={styles.tableSubtitle}>{RISK_CONFIG[activeCategory].subtitle}</p>
+              <p className={styles.tableSubtitle}>
+                Showing {filteredOrders.length} {activeCategory} risk COD orders from database. {RISK_CONFIG[activeCategory].subtitle}
+              </p>
             </div>
 
             {/* Search Input */}
@@ -226,7 +334,7 @@ export default function RiskOrders() {
               <input
                 type="text"
                 className={styles.searchInput}
-                placeholder="Search by order number, phone or customer"
+                placeholder="Search by order, phone or reason"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -250,7 +358,7 @@ export default function RiskOrders() {
                 {filteredOrders.length === 0 ? (
                   <tr>
                     <td colSpan="6" className={styles.emptyOrders}>
-                      No orders found matching &quot;{searchQuery}&quot;
+                      No {activeCategory} risk orders found {searchQuery ? `matching "${searchQuery}"` : "in database"}
                     </td>
                   </tr>
                 ) : (
@@ -397,7 +505,7 @@ export default function RiskOrders() {
           {/* Pagination & Footer */}
           <div className={styles.paginationRow}>
             <span>
-              Showing 1–{filteredOrders.length} of {RISK_CONFIG[activeCategory].totalCount} orders
+              Showing {filteredOrders.length} of {counts[activeCategory]?.count || 0} orders
             </span>
             <div className={styles.paginationBtns}>
               <button
@@ -407,7 +515,7 @@ export default function RiskOrders() {
               >
                 ‹
               </button>
-              {[1, 2, 3, 4, 5, 6].map((p) => (
+              {Array.from({ length: Math.min(5, loaderData.totalPages || 1) }, (_, i) => i + 1).map((p) => (
                 <button
                   key={p}
                   type="button"
@@ -420,7 +528,7 @@ export default function RiskOrders() {
               <button
                 type="button"
                 className={styles.pageBtn}
-                onClick={() => setActivePage((p) => Math.min(6, p + 1))}
+                onClick={() => setActivePage((p) => Math.min(loaderData.totalPages || 1, p + 1))}
               >
                 ›
               </button>

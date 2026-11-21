@@ -1,11 +1,33 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useLoaderData, useFetcher, useSearchParams } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../../shopify.server";
+import { getDashboardData, updateAppSettings, syncShopifyOrders } from "../../services/orders.server";
 import styles from "./styles.module.css";
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
+  const shop = session?.shop || "default";
+  const url = new URL(request.url);
+  const range = url.searchParams.get("range") || "Last 30 days";
+
+  await syncShopifyOrders(admin, shop);
+  const data = await getDashboardData(shop, range);
+  return { ...data, shop };
+};
+
+export const action = async ({ request }) => {
+  const { session } = await authenticate.admin(request);
+  const shop = session?.shop || "default";
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  if (intent === "toggle_embed") {
+    const enabled = formData.get("enabled") === "true";
+    await updateAppSettings(shop, { appEmbedEnabled: enabled });
+    return { ok: true, appEmbedEnabled: enabled };
+  }
+
   return null;
 };
 
@@ -55,26 +77,27 @@ const RANGE_METRICS = {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const loaderData = useLoaderData();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const fetcher = useFetcher();
+
   const [showModal, setShowModal] = useState(false);
-  const [checkoutStatus, setCheckoutStatus] = useState("Off");
+  const [checkoutStatus, setCheckoutStatus] = useState(loaderData?.appEmbedEnabled ? "On" : "Off");
   const [embedToast, setEmbedToast] = useState("");
 
   // Date range picker state
-  const [selectedRange, setSelectedRange] = useState("Last 30 days");
+  const [selectedRange, setSelectedRange] = useState(
+    searchParams.get("range") || loaderData?.range || "Last 30 days"
+  );
   const [isDateDropdownOpen, setIsDateDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
-  // Load checkout control / app embed status from localStorage
+  // Sync checkout control / app embed status with DB
   useEffect(() => {
-    try {
-      const savedStatus = localStorage.getItem("trust_cod_checkout_status");
-      if (savedStatus) {
-        setCheckoutStatus(savedStatus);
-      }
-    } catch {
-      // fallback if storage restricted
+    if (loaderData?.appEmbedEnabled !== undefined) {
+      setCheckoutStatus(loaderData.appEmbedEnabled ? "On" : "Off");
     }
-  }, []);
+  }, [loaderData?.appEmbedEnabled]);
 
   // Close date picker dropdown on outside click
   useEffect(() => {
@@ -133,11 +156,18 @@ export default function Dashboard() {
       ? (forcedValue ? "On" : "Off")
       : (checkoutStatus === "Off" ? "On" : "Off");
     setCheckoutStatus(next);
+
     try {
       localStorage.setItem("trust_cod_checkout_status", next);
     } catch {
       // fallback
     }
+
+    // Persist to Neon PostgreSQL AppSettings
+    fetcher.submit(
+      { intent: "toggle_embed", enabled: String(next === "On") },
+      { method: "POST" }
+    );
 
     setEmbedToast(
       next === "On"
@@ -147,8 +177,14 @@ export default function Dashboard() {
     setTimeout(() => setEmbedToast(""), 3500);
   };
 
+  const handleSelectRange = (rangeKey) => {
+    setSelectedRange(rangeKey);
+    setIsDateDropdownOpen(false);
+    setSearchParams({ range: rangeKey });
+  };
+
   // Math for dynamic SVG Donut chart
-  const currentMetrics = RANGE_METRICS[selectedRange] || RANGE_METRICS["Last 30 days"];
+  const currentMetrics = loaderData?.metrics || RANGE_METRICS[selectedRange] || RANGE_METRICS["Last 30 days"];
   const CIRCUMFERENCE = 471.24; // 2 * PI * 75
   const highDash = (currentMetrics.highPercent / 100) * CIRCUMFERENCE;
   const medDash = (currentMetrics.medPercent / 100) * CIRCUMFERENCE;
@@ -411,10 +447,7 @@ export default function Dashboard() {
                       key={rangeKey}
                       type="button"
                       className={`${styles.dateDropdownItem} ${selectedRange === rangeKey ? styles.dateDropdownItemActive : ""}`}
-                      onClick={() => {
-                        setSelectedRange(rangeKey);
-                        setIsDateDropdownOpen(false);
-                      }}
+                      onClick={() => handleSelectRange(rangeKey)}
                     >
                       <span>{rangeKey}</span>
                       {selectedRange === rangeKey && <span className={styles.checkIcon}>✓</span>}

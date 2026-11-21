@@ -1,19 +1,39 @@
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useLoaderData, useFetcher } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../../shopify.server";
+import { getAppSettings, updateAppSettings } from "../../services/orders.server";
 import styles from "./styles.module.css";
 
 export const loader = async ({ request }) => {
-  await authenticate.admin(request);
-  return null;
+  const { session } = await authenticate.admin(request);
+  const shop = session?.shop || "default";
+  const settings = await getAppSettings(shop);
+  return { settings, shop };
+};
+
+export const action = async ({ request }) => {
+  const { session } = await authenticate.admin(request);
+  const shop = session?.shop || "default";
+  const formData = await request.formData();
+  const enabled = formData.get("enabled") === "true";
+  const blockedPhones = formData.get("blockedPhones") || "";
+
+  await updateAppSettings(shop, {
+    appEmbedEnabled: enabled,
+    blockedPhones,
+  });
+
+  return { ok: true };
 };
 
 export default function CheckoutControl() {
   const navigate = useNavigate();
+  const loaderData = useLoaderData();
+  const fetcher = useFetcher();
 
-  // Control state synced with localStorage
-  const [isEnabled, setIsEnabled] = useState(false);
+  // Control state synced with database & localStorage
+  const [isEnabled, setIsEnabled] = useState(loaderData?.settings?.appEmbedEnabled ?? false);
 
   // 1. Choose the rule
   const [ruleType, setRuleType] = useState("hide"); // "hide" | "limit"
@@ -33,7 +53,13 @@ export default function CheckoutControl() {
   const [allowedNumbers, setAllowedNumbers] = useState([]);
 
   const [hidePhoneInput, setHidePhoneInput] = useState("");
-  const [hiddenNumbers, setHiddenNumbers] = useState([]);
+  const [hiddenNumbers, setHiddenNumbers] = useState(() => {
+    const fromDb = loaderData?.settings?.blockedPhones;
+    if (fromDb) {
+      return fromDb.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+    return [];
+  });
 
   // Load saved settings from localStorage
   useEffect(() => {
@@ -118,6 +144,16 @@ export default function CheckoutControl() {
     } catch {
       // storage
     }
+
+    // Persist to Neon PostgreSQL AppSettings
+    fetcher.submit(
+      {
+        enabled: String(isEnabled),
+        blockedPhones: hiddenNumbers.join(","),
+      },
+      { method: "POST" }
+    );
+
     // Navigate back to dashboard with confirmation
     navigate("/app");
   };
