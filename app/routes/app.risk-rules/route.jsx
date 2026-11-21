@@ -53,6 +53,21 @@ export default function RiskRules() {
     }
   }, [fetcher.data]);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest(`.${styles.dropdownWrap}`)) {
+        setOpenDropdownId(null);
+      }
+    };
+    if (openDropdownId) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [openDropdownId]);
+
   // Group rules by profile
   const highRules = rules.filter((r) => r.profile === "high");
   const mediumRules = rules.filter((r) => r.profile === "medium");
@@ -204,10 +219,18 @@ export default function RiskRules() {
             <div className={styles.dropdownWrap}>
               <button
                 type="button"
-                className={styles.dropdownTrigger}
+                className={`${styles.dropdownTrigger} ${
+                  rule.profile === "high"
+                    ? styles.triggerHigh
+                    : rule.profile === "medium"
+                    ? styles.triggerMedium
+                    : styles.triggerLow
+                }`}
                 onClick={() =>
                   setOpenDropdownId(openDropdownId === rule.id ? null : rule.id)
                 }
+                aria-haspopup="true"
+                aria-expanded={openDropdownId === rule.id}
               >
                 <div className={styles.dropdownTriggerLeft}>
                   <span
@@ -227,7 +250,23 @@ export default function RiskRules() {
                       : "Low risk"}
                   </span>
                 </div>
-                <span className={styles.arrowDown}>▼</span>
+                <svg
+                  className={`${styles.chevronIcon} ${
+                    openDropdownId === rule.id ? styles.chevronOpen : ""
+                  }`}
+                  width="12"
+                  height="12"
+                  viewBox="0 0 20 20"
+                  fill="none"
+                >
+                  <path
+                    d="M5 7.5L10 12.5L15 7.5"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
               </button>
 
               {openDropdownId === rule.id && (
@@ -241,6 +280,7 @@ export default function RiskRules() {
                   >
                     <span className={`${styles.dot} ${styles.dotHigh}`} />
                     <span>High risk</span>
+                    {rule.profile === "high" && <span className={styles.checkIcon}>✓</span>}
                   </button>
                   <button
                     type="button"
@@ -251,6 +291,7 @@ export default function RiskRules() {
                   >
                     <span className={`${styles.dot} ${styles.dotMedium}`} />
                     <span>Medium risk</span>
+                    {rule.profile === "medium" && <span className={styles.checkIcon}>✓</span>}
                   </button>
                   <button
                     type="button"
@@ -261,6 +302,7 @@ export default function RiskRules() {
                   >
                     <span className={`${styles.dot} ${styles.dotLow}`} />
                     <span>Low risk</span>
+                    {rule.profile === "low" && <span className={styles.checkIcon}>✓</span>}
                   </button>
                 </div>
               )}
@@ -321,7 +363,7 @@ export default function RiskRules() {
 
           <div className={styles.tableHeaderRow}>
             <span>Rule</span>
-            <span>Risk profile</span>
+            <span style={{ minWidth: 150, textAlign: "right" }}>Risk profile</span>
           </div>
 
           <div>{highRules.map((rule) => renderRuleRow(rule))}</div>
@@ -346,7 +388,7 @@ export default function RiskRules() {
 
           <div className={styles.tableHeaderRow}>
             <span>Rule</span>
-            <span>Risk profile</span>
+            <span style={{ minWidth: 150, textAlign: "right" }}>Risk profile</span>
           </div>
 
           <div>{mediumRules.map((rule) => renderRuleRow(rule))}</div>
@@ -371,7 +413,7 @@ export default function RiskRules() {
 
           <div className={styles.tableHeaderRow}>
             <span>Rule</span>
-            <span>Risk profile</span>
+            <span style={{ minWidth: 150, textAlign: "right" }}>Risk profile</span>
           </div>
 
           <div>{lowRules.map((rule) => renderRuleRow(rule))}</div>
