@@ -61,32 +61,80 @@ model RiskRule {
   @@unique([shop, id])
 }
 
+model Customer {
+  id                String      @id @default(uuid())
+  shop              String
+  shopifyCustomerId String?     // e.g. "gid://shopify/Customer/12345678"
+  firstName         String?
+  lastName          String?
+  displayName       String?
+  email             String?
+  phone             String?
+  ordersCount       Int         @default(0) // total orders from Shopify
+  totalSpent        Float       @default(0) // total amount spent in Shopify
+  currency          String      @default("INR")
+
+  // COD specific tracking
+  codOrdersCount    Int         @default(0)
+  codDeliveredCount Int         @default(0)
+  codCancelledCount Int         @default(0)
+  riskLevel         String      @default("Low") // "Low" | "Medium" | "High"
+  isBlocked         Boolean     @default(false)
+  isAllowlisted     Boolean     @default(false)
+
+  // Primary address from Shopify
+  address1          String?
+  address2          String?
+  city              String?
+  province          String?
+  zip               String?
+  country           String?
+  tags              String?     // Shopify customer tags
+
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  orders            OrderRisk[]
+
+  @@unique([shop, shopifyCustomerId])
+  @@index([shop, phone])
+  @@index([shop, email])
+  @@index([shop, riskLevel])
+}
+
 model OrderRisk {
-  id              String   @id @default(uuid())
-  shop            String
-  shopifyOrderId  String?
-  orderNumber     String   // e.g. "#1048"
-  customerName    String?
-  customerPhone   String?
-  customerEmail   String?
-  shippingAddress String?
-  pincode         String?
-  city            String?
-  totalPrice      Float    @default(0)
-  currency        String   @default("INR")
-  paymentGateway  String?  @default("manual")
-  risk            String   @default("Medium") // "High" | "Medium" | "Low"
-  riskScore       Int      @default(50)
-  reason          String   @default("Review required")
-  matchedRules    String?  // JSON string
-  status          String   @default("Waiting for a call") // "Waiting for a call" | "Confirmed" | "Cancelled" | "Unreachable"
-  action          String?  // "Confirmed" | "Cancelled" | "Unreachable" | "Mark safe"
-  notes           String?
-  orderCreatedAt  DateTime @default(now())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                String    @id @default(uuid())
+  shop              String
+  shopifyOrderId    String?
+  orderNumber       String    // e.g. "#1048"
+
+  // Relation to Customer
+  customerId        String?
+  customer          Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  shopifyCustomerId String?
+
+  customerName      String?
+  customerPhone     String?
+  customerEmail     String?
+  shippingAddress   String?
+  pincode           String?
+  city              String?
+  totalPrice        Float     @default(0)
+  currency          String    @default("INR")
+  paymentGateway    String?   @default("manual")
+  risk              String    @default("Medium") // "High" | "Medium" | "Low"
+  riskScore         Int       @default(50)
+  reason            String    @default("Review required")
+  matchedRules      String?   // JSON string
+  status            String    @default("Waiting for a call") // "Waiting for a call" | "Confirmed" | "Cancelled" | "Unreachable"
+  action            String?   // "Confirmed" | "Cancelled" | "Unreachable" | "Mark safe"
+  notes             String?
+  orderCreatedAt    DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   @@index([shop, shopifyOrderId])
+  @@index([shop, customerId])
   @@index([shop, orderNumber])
   @@index([shop, risk])
   @@index([shop, status])

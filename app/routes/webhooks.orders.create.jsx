@@ -16,7 +16,9 @@ export const action = async ({ request }) => {
     const blockedPincodes = (settings.blockedPincodes || "").split(",").map((p) => p.trim());
 
     const customerPhone = payload.shipping_address?.phone || payload.customer?.phone || payload.phone || "";
-    const customerName = payload.shipping_address?.name || payload.customer?.first_name || "";
+    const customerName = payload.customer
+      ? [payload.customer.first_name, payload.customer.last_name].filter(Boolean).join(" ") || payload.shipping_address?.name || "Customer"
+      : payload.shipping_address?.name || "Customer";
     const customerEmail = payload.customer?.email || payload.email || "";
     const shippingAddress = [payload.shipping_address?.address1, payload.shipping_address?.address2].filter(Boolean).join(", ");
     const pincode = payload.shipping_address?.zip || "";
@@ -24,6 +26,49 @@ export const action = async ({ request }) => {
     const totalPrice = parseFloat(payload.total_price || 0);
     const orderNumber = payload.name || `#${payload.order_number}`;
     const shopifyOrderId = payload.admin_graphql_api_id || `gid://shopify/Order/${payload.id}`;
+    const shopifyCustId = payload.customer?.admin_graphql_api_id || (payload.customer?.id ? `gid://shopify/Customer/${payload.customer.id}` : null);
+
+    // Upsert Customer if present in Shopify payload
+    let dbCustomerId = null;
+    if (shopifyCustId) {
+      const ordersCount = parseInt(payload.customer?.orders_count || "1", 10);
+      const totalSpent = parseFloat(payload.customer?.total_spent || String(totalPrice));
+
+      const upsertedCust = await prisma.customer.upsert({
+        where: {
+          shop_shopifyCustomerId: {
+            shop,
+            shopifyCustomerId: shopifyCustId,
+          },
+        },
+        update: {
+          firstName: payload.customer?.first_name,
+          lastName: payload.customer?.last_name,
+          displayName: customerName,
+          phone: customerPhone || undefined,
+          email: customerEmail || undefined,
+          ordersCount,
+          totalSpent,
+          city: city || undefined,
+          zip: pincode || undefined,
+        },
+        create: {
+          shop,
+          shopifyCustomerId: shopifyCustId,
+          firstName: payload.customer?.first_name,
+          lastName: payload.customer?.last_name,
+          displayName: customerName,
+          phone: customerPhone,
+          email: customerEmail,
+          ordersCount,
+          totalSpent,
+          currency: payload.currency || "INR",
+          city,
+          zip: pincode,
+        },
+      });
+      dbCustomerId = upsertedCust.id;
+    }
 
     // Evaluate risk
     const assessment = evaluateOrderRisk(
@@ -40,6 +85,8 @@ export const action = async ({ request }) => {
       },
       update: {
         orderNumber,
+        customerId: dbCustomerId,
+        shopifyCustomerId: shopifyCustId,
         customerName,
         customerPhone,
         customerEmail,
@@ -57,6 +104,8 @@ export const action = async ({ request }) => {
         id: `shopify_${payload.id}`,
         shop,
         shopifyOrderId,
+        customerId: dbCustomerId,
+        shopifyCustomerId: shopifyCustId,
         orderNumber,
         customerName,
         customerPhone,
