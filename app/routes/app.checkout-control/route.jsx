@@ -1,36 +1,122 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { Link, useNavigate, useLoaderData, useFetcher } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../../shopify.server";
-import { getAppSettings, updateAppSettings } from "../../services/orders.server";
+import prisma from "../../db.server";
+import { getAppSettings, updateAppSettings, syncShopifyOrders } from "../../services/orders.server";
 import styles from "./styles.module.css";
 
 export const loader = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const shop = session?.shop || "default";
-  const settings = await getAppSettings(shop);
-  return { settings, shop };
+
+  // Ensure orders and customers are populated/synced
+  await syncShopifyOrders(admin, shop);
+
+  const [settings, dbCustomers] = await Promise.all([
+    getAppSettings(shop),
+    prisma.customer.findMany({
+      where: { shop },
+      orderBy: { displayName: "asc" },
+    }),
+  ]);
+
+  return {
+    settings,
+    customers: dbCustomers.map((c) => ({
+      id: c.id,
+      shopifyCustomerId: c.shopifyCustomerId,
+      name: c.displayName || `${c.firstName || ""} ${c.lastName || ""}`.trim() || "Customer",
+      phone: c.phone || "",
+      email: c.email || "",
+      city: c.city || "",
+      ordersCount: c.ordersCount,
+      totalSpent: c.totalSpent,
+      riskLevel: c.riskLevel,
+      isBlocked: c.isBlocked,
+      isAllowlisted: c.isAllowlisted,
+    })),
+    shop,
+  };
 };
 
 export const action = async ({ request }) => {
-  const { session } = await authenticate.admin(request);
+  const { session, admin } = await authenticate.admin(request);
   const shop = session?.shop || "default";
   const formData = await request.formData();
   const enabled = formData.get("enabled") === "true";
   const blockedPhones = formData.get("blockedPhones") || "";
+  const allowedPhones = formData.get("allowedPhones") || "";
 
+  // 1. Update AppSettings in database
   await updateAppSettings(shop, {
     appEmbedEnabled: enabled,
     blockedPhones,
   });
 
+  // 2. Update Customer records in database
+  const blockedList = blockedPhones.split(",").map((p) => p.trim()).filter(Boolean);
+  const allowedList = allowedPhones.split(",").map((p) => p.trim()).filter(Boolean);
+
+  // Reset previously blocked customers if removed
+  await prisma.customer.updateMany({
+    where: { shop, phone: { notIn: blockedList }, isBlocked: true },
+    data: { isBlocked: false },
+  });
+
+  // Mark blocked customers
+  if (blockedList.length > 0) {
+    await prisma.customer.updateMany({
+      where: { shop, phone: { in: blockedList } },
+      data: { isBlocked: true, isAllowlisted: false, riskLevel: "High" },
+    });
+  }
+
+  // Reset previously allowlisted customers if removed
+  await prisma.customer.updateMany({
+    where: { shop, phone: { notIn: allowedList }, isAllowlisted: true },
+    data: { isAllowlisted: false },
+  });
+
+  // Mark allowlisted customers
+  if (allowedList.length > 0) {
+    await prisma.customer.updateMany({
+      where: { shop, phone: { in: allowedList } },
+      data: { isAllowlisted: true, isBlocked: false, riskLevel: "Low" },
+    });
+  }
+
+  // 3. Sync tags in Shopify Admin if available
+  if (admin) {
+    for (const phone of blockedList) {
+      const cust = await prisma.customer.findFirst({ where: { shop, phone } });
+      if (cust?.shopifyCustomerId) {
+        try {
+          await admin.graphql(
+            `#graphql
+            mutation TagBlockedCustomer($id: ID!, $tags: [String!]!) {
+              tagsAdd(id: $id, tags: $tags) { userErrors { field message } }
+            }`,
+            { variables: { id: cust.shopifyCustomerId, tags: ["COD-Blocked"] } }
+          );
+        } catch (e) {
+          console.warn("Shopify tag sync skipped:", e);
+        }
+      }
+    }
+  }
+
   return { ok: true };
 };
+
+const normalizeDigits = (val) => (val ? String(val).replace(/\D/g, "") : "");
 
 export default function CheckoutControl() {
   const navigate = useNavigate();
   const loaderData = useLoaderData();
   const fetcher = useFetcher();
+
+  const allCustomers = useMemo(() => loaderData?.customers || [], [loaderData?.customers]);
 
   // Control state synced with database & localStorage
   const [isEnabled, setIsEnabled] = useState(loaderData?.settings?.appEmbedEnabled ?? false);
@@ -48,47 +134,77 @@ export default function CheckoutControl() {
     highRiskProfile: false,
   });
 
-  // 3. Your own lists
+  // 3. Your own lists (Customer Objects)
   const [allowPhoneInput, setAllowPhoneInput] = useState("");
-  const [allowedNumbers, setAllowedNumbers] = useState([]);
-
-  const [hidePhoneInput, setHidePhoneInput] = useState("");
-  const [hiddenNumbers, setHiddenNumbers] = useState(() => {
-    const fromDb = loaderData?.settings?.blockedPhones;
-    if (fromDb) {
-      return fromDb.split(",").map((s) => s.trim()).filter(Boolean);
-    }
-    return [];
+  const [allowError, setAllowError] = useState("");
+  const [showAllowDropdown, setShowAllowDropdown] = useState(false);
+  const [allowedCustomers, setAllowedCustomers] = useState(() => {
+    // Initialise from DB customers who are allowlisted
+    return allCustomers.filter((c) => c.isAllowlisted);
   });
 
-  // Load saved settings from localStorage
+  const [hidePhoneInput, setHidePhoneInput] = useState("");
+  const [hideError, setHideError] = useState("");
+  const [showHideDropdown, setShowHideDropdown] = useState(false);
+  const [hiddenCustomers, setHiddenCustomers] = useState(() => {
+    // Initialise from AppSettings blockedPhones or DB customers
+    const fromDb = loaderData?.settings?.blockedPhones || "";
+    const blockedPhonesList = fromDb.split(",").map((s) => s.trim()).filter(Boolean);
+    return allCustomers.filter((c) => c.isBlocked || blockedPhonesList.includes(c.phone));
+  });
+
+  const allowRef = useRef(null);
+  const hideRef = useRef(null);
+
+  // Close dropdown on outside click
   useEffect(() => {
-    try {
-      const savedStatus = localStorage.getItem("trust_cod_checkout_status");
-      if (savedStatus) {
-        setIsEnabled(savedStatus === "On");
+    const handleClickOutside = (e) => {
+      if (allowRef.current && !allowRef.current.contains(e.target)) {
+        setShowAllowDropdown(false);
       }
-      const savedRule = localStorage.getItem("trust_cod_rule_type");
-      if (savedRule) setRuleType(savedRule);
-
-      const savedMaxOrders = localStorage.getItem("trust_cod_max_orders");
-      if (savedMaxOrders) setMaxOrders(savedMaxOrders);
-
-      const savedDays = localStorage.getItem("trust_cod_time_period_days");
-      if (savedDays) setTimePeriodDays(savedDays);
-
-      const savedChecks = localStorage.getItem("trust_cod_history_checks");
-      if (savedChecks) setHistoryChecks(JSON.parse(savedChecks));
-
-      const savedAllowed = localStorage.getItem("trust_cod_allowed_numbers");
-      if (savedAllowed) setAllowedNumbers(JSON.parse(savedAllowed));
-
-      const savedHidden = localStorage.getItem("trust_cod_hidden_numbers");
-      if (savedHidden) setHiddenNumbers(JSON.parse(savedHidden));
-    } catch {
-      // storage
-    }
+      if (hideRef.current && !hideRef.current.contains(e.target)) {
+        setShowHideDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Filter autocomplete suggestions for "Always allow COD"
+  const allowSuggestions = useMemo(() => {
+    const trimmed = allowPhoneInput.trim();
+    if (!trimmed) return [];
+    const queryDigits = normalizeDigits(trimmed);
+
+    const existingPhones = new Set(allowedCustomers.map((c) => c.phone));
+    return allCustomers.filter((c) => {
+      if (existingPhones.has(c.phone)) return false;
+      const cDigits = normalizeDigits(c.phone);
+      return (
+        (queryDigits && cDigits.includes(queryDigits)) ||
+        c.phone.includes(trimmed) ||
+        c.name.toLowerCase().includes(trimmed.toLowerCase())
+      );
+    });
+  }, [allowPhoneInput, allCustomers, allowedCustomers]);
+
+  // Filter autocomplete suggestions for "Always hide COD"
+  const hideSuggestions = useMemo(() => {
+    const trimmed = hidePhoneInput.trim();
+    if (!trimmed) return [];
+    const queryDigits = normalizeDigits(trimmed);
+
+    const existingPhones = new Set(hiddenCustomers.map((c) => c.phone));
+    return allCustomers.filter((c) => {
+      if (existingPhones.has(c.phone)) return false;
+      const cDigits = normalizeDigits(c.phone);
+      return (
+        (queryDigits && cDigits.includes(queryDigits)) ||
+        c.phone.includes(trimmed) ||
+        c.name.toLowerCase().includes(trimmed.toLowerCase())
+      );
+    });
+  }, [hidePhoneInput, allCustomers, hiddenCustomers]);
 
   const handleToggle = (checked) => {
     setIsEnabled(checked);
@@ -106,50 +222,106 @@ export default function CheckoutControl() {
     }));
   };
 
-  const handleAddAllowed = (e) => {
+  // Add customer to "Always allow"
+  const handleSelectAllowCustomer = (customer) => {
+    if (!allowedCustomers.some((c) => c.phone === customer.phone)) {
+      setAllowedCustomers((prev) => [...prev, customer]);
+    }
+    setAllowPhoneInput("");
+    setAllowError("");
+    setShowAllowDropdown(false);
+  };
+
+  const handleAddAllowedSubmit = (e) => {
     e?.preventDefault();
-    const trimmed = allowPhoneInput.trim();
-    if (trimmed && !allowedNumbers.includes(trimmed)) {
-      setAllowedNumbers([...allowedNumbers, trimmed]);
-      setAllowPhoneInput("");
+    const inputDigits = normalizeDigits(allowPhoneInput);
+    if (!inputDigits) return;
+
+    // Check if the typed number belongs to an actual customer in the database
+    const matchedCustomer = allCustomers.find((c) => {
+      const cDigits = normalizeDigits(c.phone);
+      return cDigits === inputDigits || c.phone.trim() === allowPhoneInput.trim();
+    });
+
+    if (matchedCustomer) {
+      if (!allowedCustomers.some((c) => c.phone === matchedCustomer.phone)) {
+        setAllowedCustomers((prev) => [...prev, matchedCustomer]);
+        setAllowPhoneInput("");
+        setAllowError("");
+        setShowAllowDropdown(false);
+      } else {
+        setAllowError("Customer is already added to Always allow COD list.");
+      }
+    } else {
+      setAllowError("Customer not found in database. Only registered customers from Shopify can be chosen.");
     }
   };
 
-  const handleRemoveAllowed = (num) => {
-    setAllowedNumbers(allowedNumbers.filter((n) => n !== num));
+  const handleRemoveAllowed = (phone) => {
+    setAllowedCustomers((prev) => prev.filter((c) => c.phone !== phone));
   };
 
-  const handleAddHidden = (e) => {
+  // Add customer to "Always hide"
+  const handleSelectHideCustomer = (customer) => {
+    if (!hiddenCustomers.some((c) => c.phone === customer.phone)) {
+      setHiddenCustomers((prev) => [...prev, customer]);
+    }
+    setHidePhoneInput("");
+    setHideError("");
+    setShowHideDropdown(false);
+  };
+
+  const handleAddHiddenSubmit = (e) => {
     e?.preventDefault();
-    const trimmed = hidePhoneInput.trim();
-    if (trimmed && !hiddenNumbers.includes(trimmed)) {
-      setHiddenNumbers([...hiddenNumbers, trimmed]);
-      setHidePhoneInput("");
+    const inputDigits = normalizeDigits(hidePhoneInput);
+    if (!inputDigits) return;
+
+    // Check if the typed number belongs to an actual customer in the database
+    const matchedCustomer = allCustomers.find((c) => {
+      const cDigits = normalizeDigits(c.phone);
+      return cDigits === inputDigits || c.phone.trim() === hidePhoneInput.trim();
+    });
+
+    if (matchedCustomer) {
+      if (!hiddenCustomers.some((c) => c.phone === matchedCustomer.phone)) {
+        setHiddenCustomers((prev) => [...prev, matchedCustomer]);
+        setHidePhoneInput("");
+        setHideError("");
+        setShowHideDropdown(false);
+      } else {
+        setHideError("Customer is already added to Always hide COD list.");
+      }
+    } else {
+      setHideError("Customer not found in database. Only registered customers from Shopify can be chosen.");
     }
   };
 
-  const handleRemoveHidden = (num) => {
-    setHiddenNumbers(hiddenNumbers.filter((n) => n !== num));
+  const handleRemoveHidden = (phone) => {
+    setHiddenCustomers((prev) => prev.filter((c) => c.phone !== phone));
   };
 
   const handleSave = () => {
+    const blockedPhoneList = hiddenCustomers.map((c) => c.phone).filter(Boolean);
+    const allowedPhoneList = allowedCustomers.map((c) => c.phone).filter(Boolean);
+
     try {
       localStorage.setItem("trust_cod_checkout_status", isEnabled ? "On" : "Off");
       localStorage.setItem("trust_cod_rule_type", ruleType);
       localStorage.setItem("trust_cod_max_orders", maxOrders);
       localStorage.setItem("trust_cod_time_period_days", timePeriodDays);
       localStorage.setItem("trust_cod_history_checks", JSON.stringify(historyChecks));
-      localStorage.setItem("trust_cod_allowed_numbers", JSON.stringify(allowedNumbers));
-      localStorage.setItem("trust_cod_hidden_numbers", JSON.stringify(hiddenNumbers));
+      localStorage.setItem("trust_cod_allowed_numbers", JSON.stringify(allowedPhoneList));
+      localStorage.setItem("trust_cod_hidden_numbers", JSON.stringify(blockedPhoneList));
     } catch {
       // storage
     }
 
-    // Persist to Neon PostgreSQL AppSettings
+    // Persist to Neon PostgreSQL AppSettings & Customer records
     fetcher.submit(
       {
         enabled: String(isEnabled),
-        blockedPhones: hiddenNumbers.join(","),
+        blockedPhones: blockedPhoneList.join(","),
+        allowedPhones: allowedPhoneList.join(","),
       },
       { method: "POST" }
     );
@@ -184,64 +356,18 @@ export default function CheckoutControl() {
           <div className={styles.headerText}>
             <h1 className={styles.title}>Checkout COD control</h1>
             <p className={styles.subtitle}>
-              Decide when Cash on Delivery is hidden at checkout for customers with a risky history.
+              Decide when COD is hidden or limited on your checkout based on customer risk history.
             </p>
           </div>
 
-          {/* Right Header Illustration */}
           <div className={styles.headerIllustration}>
             <svg width="200" height="110" viewBox="0 0 200 110" fill="none">
-              {/* Soft green ambient aura */}
-              <circle cx="140" cy="55" r="50" fill="#f0fdf4" />
-              <circle cx="90" cy="65" r="40" fill="#f6fef8" />
-
-              {/* Floating window / card */}
-              <rect
-                x="20"
-                y="15"
-                width="115"
-                height="80"
-                rx="8"
-                fill="white"
-                stroke="#e5e7eb"
-                strokeWidth="1"
-              />
-              {/* Top header bar */}
-              <rect x="20" y="15" width="115" height="18" rx="8" fill="#86efac" fillOpacity="0.8" />
-              <circle cx="28" cy="24" r="2.5" fill="white" />
-              <circle cx="36" cy="24" r="2.5" fill="white" />
-              <circle cx="44" cy="24" r="2.5" fill="white" />
-
-              {/* Inside window card items */}
-              <rect x="30" y="44" width="45" height="6" rx="3" fill="#bbf7d0" />
-              <circle cx="32" cy="64" r="3" fill="#a7f3d0" />
-              <rect x="40" y="62.5" width="45" height="3.5" rx="1.75" fill="#e5e7eb" />
-              <circle cx="32" cy="78" r="3" fill="#a7f3d0" />
-              <rect x="40" y="76.5" width="30" height="3.5" rx="1.75" fill="#e5e7eb" />
-
-              {/* Controlled Rupee Badge (Circle with Rupee and strike) */}
-              <circle cx="150" cy="55" r="28" fill="#dcfce7" stroke="#16a34a" strokeWidth="2.5" />
-              <text
-                x="150"
-                y="65"
-                textAnchor="middle"
-                fontSize="32"
-                fontWeight="700"
-                fill="#15803d"
-                fontFamily="system-ui, -apple-system, sans-serif"
-              >
-                ₹
-              </text>
-              {/* Diagonal prohibition/control line */}
-              <line
-                x1="130"
-                y1="37"
-                x2="170"
-                y2="73"
-                stroke="#15803d"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-              />
+              <rect x="20" y="20" width="160" height="70" rx="8" fill="#f8fafc" stroke="#e2e8f0" strokeWidth="1.5" />
+              <rect x="35" y="35" width="60" height="10" rx="3" fill="#cbd5e1" />
+              <rect x="35" y="52" width="100" height="8" rx="2" fill="#e2e8f0" />
+              <rect x="35" y="66" width="40" height="8" rx="2" fill="#e2e8f0" />
+              <circle cx="150" cy="55" r="16" fill="#fef2f2" />
+              <path d="M144 49L156 61M156 49L144 61" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" />
             </svg>
           </div>
         </div>
@@ -251,126 +377,107 @@ export default function CheckoutControl() {
           <div className={styles.bannerLeft}>
             <div className={styles.bannerTitleRow}>
               <span className={styles.checkBadge}>
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                  <path
-                    d="M3.5 8.5L6.5 11.5L12.5 4.5"
-                    stroke="white"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                  <path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </span>
               <h2 className={styles.bannerTitle}>Turn on checkout COD control</h2>
             </div>
             <p className={styles.bannerDesc}>
-              Enable this to hide or limit COD at checkout for customers with a risky history.
+              When turned on, your rules apply to customer checkouts.
             </p>
             <div className={styles.statusRow}>
-              <div className={styles.statusIndicator}>
-                <span
-                  className={`${styles.statusDot} ${
-                    isEnabled ? styles.statusDotActive : ""
-                  }`}
-                />
-                <span className={styles.statusText}>
-                  Status: {isEnabled ? "On" : "Off"}
-                </span>
-              </div>
-              <span className={styles.statusHint}>
-                {isEnabled
-                  ? "Checkout COD control is currently active."
-                  : "Nothing changes at checkout until you turn this on."}
+              <span className={styles.statusDotActive} />
+              <span className={styles.statusTextActive}>
+                App embed is <strong>{isEnabled ? "On" : "Off"}</strong> in your live theme
               </span>
             </div>
           </div>
 
-          <div className={styles.toggleWrap}>
-            <label className={styles.toggleSwitch}>
-              <input
-                type="checkbox"
-                className={styles.toggleInput}
-                checked={isEnabled}
-                onChange={(e) => handleToggle(e.target.checked)}
-              />
-              <span className={styles.toggleSlider} />
-            </label>
-            <span className={styles.toggleLabel}>{isEnabled ? "On" : "Off"}</span>
-          </div>
+          <label className={styles.toggleSwitch}>
+            <input
+              type="checkbox"
+              className={styles.toggleInput}
+              checked={isEnabled}
+              onChange={(e) => handleToggle(e.target.checked)}
+            />
+            <span className={styles.toggleSlider} />
+          </label>
         </div>
 
         {/* Section 1: Choose the rule */}
         <div className={styles.sectionCard}>
           <h2 className={styles.sectionTitle}>1. Choose the rule</h2>
           <p className={styles.sectionDesc}>
-            Pick what happens to COD for a customer who matches the history below.
+            What happens when a customer matches your risk criteria.
           </p>
 
-          {/* Option 1: Hide COD completely */}
-          <div
-            className={styles.ruleOption}
-            onClick={() => setRuleType("hide")}
-            role="radio"
-            aria-checked={ruleType === "hide"}
-          >
-            <div
-              className={`${styles.radioCircle} ${
-                ruleType === "hide" ? styles.radioCircleSelected : ""
+          <div className={styles.radioGroup}>
+            {/* Option A: Hide COD completely */}
+            <label
+              className={`${styles.radioCard} ${
+                ruleType === "hide" ? styles.radioCardSelected : ""
               }`}
             >
-              {ruleType === "hide" && <div className={styles.radioDot} />}
-            </div>
-            <div className={styles.ruleContent}>
-              <h3 className={styles.ruleTitle}>
-                Hide COD completely for that customer
-              </h3>
-              <p className={styles.ruleSubtext}>
-                COD will not be shown at checkout for these customers.
-              </p>
-            </div>
-          </div>
+              <input
+                type="radio"
+                name="ruleType"
+                value="hide"
+                checked={ruleType === "hide"}
+                onChange={() => setRuleType("hide")}
+                className={styles.radioInput}
+              />
+              <div className={styles.radioContent}>
+                <span className={styles.radioTitle}>Hide COD completely</span>
+                <span className={styles.radioSub}>
+                  Customers who match your rules will not see COD at checkout. Only prepaid options will be visible.
+                </span>
+              </div>
+            </label>
 
-          {/* Option 2: Limit COD */}
-          <div
-            className={styles.ruleOption}
-            onClick={() => setRuleType("limit")}
-            role="radio"
-            aria-checked={ruleType === "limit"}
-          >
-            <div
-              className={`${styles.radioCircle} ${
-                ruleType === "limit" ? styles.radioCircleSelected : ""
+            {/* Option B: Limit COD */}
+            <label
+              className={`${styles.radioCard} ${
+                ruleType === "limit" ? styles.radioCardSelected : ""
               }`}
             >
-              {ruleType === "limit" && <div className={styles.radioDot} />}
-            </div>
-            <div className={styles.ruleContent}>
-              <h3 className={styles.ruleTitle}>Limit COD for that customer</h3>
-              <p className={styles.ruleSubtext}>
-                Allow only a certain number of COD orders in a given time period.
-              </p>
-            </div>
-          </div>
+              <input
+                type="radio"
+                name="ruleType"
+                value="limit"
+                checked={ruleType === "limit"}
+                onChange={() => setRuleType("limit")}
+                className={styles.radioInput}
+              />
+              <div className={styles.radioContent}>
+                <span className={styles.radioTitle}>Limit COD</span>
+                <span className={styles.radioSub}>
+                  Customers can only place a limited number of COD orders in a given time window.
+                </span>
 
-          {/* Inline inputs row for Limit */}
-          <div className={styles.limitInputsRow}>
-            <span>Allow up to</span>
-            <input
-              type="number"
-              className={styles.numberInput}
-              value={maxOrders}
-              onChange={(e) => setMaxOrders(e.target.value)}
-              min="1"
-            />
-            <span>COD orders every</span>
-            <input
-              type="number"
-              className={styles.numberInput}
-              value={timePeriodDays}
-              onChange={(e) => setTimePeriodDays(e.target.value)}
-              min="1"
-            />
-            <span>days</span>
+                {ruleType === "limit" && (
+                  <div className={styles.limitInputsRow}>
+                    <span>Maximum</span>
+                    <input
+                      type="number"
+                      className={styles.numInput}
+                      value={maxOrders}
+                      onChange={(e) => setMaxOrders(e.target.value)}
+                      min="1"
+                    />
+                    <span>COD orders per customer in the last</span>
+                    <input
+                      type="number"
+                      className={styles.numInput}
+                      value={timePeriodDays}
+                      onChange={(e) => setTimePeriodDays(e.target.value)}
+                      min="1"
+                    />
+                    <span>days.</span>
+                  </div>
+                )}
+              </div>
+            </label>
           </div>
         </div>
 
@@ -378,7 +485,7 @@ export default function CheckoutControl() {
         <div className={styles.sectionCard}>
           <h2 className={styles.sectionTitle}>2. Which history counts?</h2>
           <p className={styles.sectionDesc}>
-            A customer matches if any checked item is true in your store.
+            COD is hidden or limited if any of these conditions are true.
           </p>
 
           <div className={styles.historyList}>
@@ -389,9 +496,7 @@ export default function CheckoutControl() {
             >
               <div
                 className={`${styles.checkboxBox} ${
-                  historyChecks.refusedOrCancelled
-                    ? styles.checkboxBoxChecked
-                    : ""
+                  historyChecks.refusedOrCancelled ? styles.checkboxBoxChecked : ""
                 }`}
               >
                 {historyChecks.refusedOrCancelled && (
@@ -408,10 +513,10 @@ export default function CheckoutControl() {
               </div>
               <div className={styles.historyContent}>
                 <h3 className={styles.historyTitle}>
-                  An earlier COD order was refused or cancelled by the customer
+                  An earlier COD order was refused or cancelled
                 </h3>
                 <p className={styles.historyDesc}>
-                  Includes orders cancelled by the customer or returned without delivery.
+                  Customer refused delivery at their doorstep, or cancelled after dispatch.
                 </p>
               </div>
             </div>
@@ -440,10 +545,10 @@ export default function CheckoutControl() {
               </div>
               <div className={styles.historyContent}>
                 <h3 className={styles.historyTitle}>
-                  An earlier COD order was marked unreachable in the contact sheet
+                  Customer was unreachable on verification call
                 </h3>
                 <p className={styles.historyDesc}>
-                  Includes orders you marked as unreachable.
+                  Did not answer the phone when your team called to confirm the COD order.
                 </p>
               </div>
             </div>
@@ -516,7 +621,7 @@ export default function CheckoutControl() {
           </div>
         </div>
 
-        {/* Section 3: Your own lists */}
+        {/* Section 3: Your own lists (with Customer Intelligence Autocomplete) */}
         <div className={styles.sectionCard}>
           <h2 className={styles.sectionTitle}>3. Your own lists</h2>
           <p className={styles.sectionDesc}>
@@ -525,7 +630,7 @@ export default function CheckoutControl() {
 
           <div className={styles.twoColGrid}>
             {/* Column 1: Always allow COD */}
-            <div className={styles.listCard}>
+            <div className={styles.listCard} ref={allowRef}>
               <div className={`${styles.listHeader} ${styles.listHeaderAllow}`}>
                 <div className={`${styles.listIconBox} ${styles.iconBoxAllow}`}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -537,25 +642,84 @@ export default function CheckoutControl() {
                 </div>
                 <div>
                   <h3 className={styles.listTitle}>Always allow COD</h3>
-                  <p className={styles.listSub}>Trusted customers</p>
+                  <p className={styles.listSub}>Trusted customers ({allowedCustomers.length})</p>
                 </div>
               </div>
 
               <div className={styles.listBody}>
-                <form className={styles.inputRow} onSubmit={handleAddAllowed}>
-                  <input
-                    type="tel"
-                    className={styles.phoneInput}
-                    placeholder="Enter phone number"
-                    value={allowPhoneInput}
-                    onChange={(e) => setAllowPhoneInput(e.target.value)}
-                  />
+                <form className={styles.inputRow} onSubmit={handleAddAllowedSubmit}>
+                  <div className={styles.inputWrapper}>
+                    <input
+                      type="tel"
+                      className={styles.phoneInput}
+                      placeholder="Enter numeric customer phone number"
+                      value={allowPhoneInput}
+                      onChange={(e) => {
+                        // Enforce numeric contact numbers only (digits, +, spaces)
+                        const cleaned = e.target.value.replace(/[^0-9+ ]/g, "");
+                        setAllowPhoneInput(cleaned);
+                        setShowAllowDropdown(true);
+                        setAllowError("");
+                      }}
+                      onFocus={() => {
+                        if (allowPhoneInput.trim()) setShowAllowDropdown(true);
+                      }}
+                    />
+
+                    {/* Predictive suggestions dropdown for actual customers in database */}
+                    {showAllowDropdown && allowPhoneInput.trim().length > 0 && (
+                      <div className={styles.suggestionDropdown}>
+                        {allowSuggestions.length === 0 ? (
+                          <div className={styles.suggestionEmpty}>
+                            No customer with phone matching &quot;{allowPhoneInput}&quot; found in database.
+                          </div>
+                        ) : (
+                          allowSuggestions.slice(0, 6).map((cust) => (
+                            <div
+                              key={cust.id}
+                              className={styles.suggestionItem}
+                              onClick={() => handleSelectAllowCustomer(cust)}
+                            >
+                              <div className={styles.suggestionAvatar}>
+                                {cust.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div className={styles.suggestionInfo}>
+                                <div className={styles.suggestionNameRow}>
+                                  <span className={styles.suggestionName}>{cust.name}</span>
+                                  <span className={styles.suggestionPhone}>{cust.phone}</span>
+                                </div>
+                                <div className={styles.suggestionMeta}>
+                                  {cust.city && <span>{cust.city} • </span>}
+                                  <span>{cust.ordersCount || 1} {cust.ordersCount === 1 ? "order" : "orders"}</span>
+                                  <span
+                                    className={`${styles.miniRiskBadge} ${
+                                      cust.riskLevel === "High"
+                                        ? styles.miniRiskHigh
+                                        : cust.riskLevel === "Medium"
+                                        ? styles.miniRiskMedium
+                                        : styles.miniRiskLow
+                                    }`}
+                                  >
+                                    {cust.riskLevel}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   <button type="submit" className={styles.btnAdd}>
                     Add
                   </button>
                 </form>
 
-                {allowedNumbers.length === 0 ? (
+                {allowError && <div className={styles.inputErrorNotice}>⚠️ {allowError}</div>}
+
+                {/* Selected Customers Details Cards */}
+                {allowedCustomers.length === 0 ? (
                   <div className={styles.emptyStateBox}>
                     <svg
                       className={styles.emptyIcon}
@@ -570,23 +734,43 @@ export default function CheckoutControl() {
                     <div>
                       <h4 className={styles.emptyTitle}>No numbers added yet</h4>
                       <p className={styles.emptySub}>
-                        Add phone numbers of customers you trust.
+                        Add phone numbers of customers you trust from database.
                       </p>
                     </div>
                   </div>
                 ) : (
-                  <div className={styles.tagList}>
-                    {allowedNumbers.map((num) => (
-                      <span key={num} className={styles.phoneTag}>
-                        {num}
+                  <div className={styles.customerRowsList}>
+                    {allowedCustomers.map((cust) => (
+                      <div key={cust.phone} className={styles.customerCardItem}>
+                        <div className={styles.customerAvatarAllow}>
+                          {cust.name ? cust.name.charAt(0).toUpperCase() : "C"}
+                        </div>
+                        <div className={styles.customerDetails}>
+                          <div className={styles.customerHeaderLine}>
+                            <span className={styles.customerDisplayName}>{cust.name}</span>
+                            <span className={styles.customerPhoneBadge}>{cust.phone}</span>
+                            <span className={`${styles.riskPill} ${styles.pillLow}`}>
+                              Always Allow COD
+                            </span>
+                          </div>
+                          <div className={styles.customerMetaLine}>
+                            {cust.email && <span>{cust.email} • </span>}
+                            {cust.city && <span>{cust.city} • </span>}
+                            <span>{cust.ordersCount || 1} orders</span>
+                            {cust.totalSpent > 0 && (
+                              <span> • ₹{Math.round(cust.totalSpent).toLocaleString("en-IN")} spent</span>
+                            )}
+                          </div>
+                        </div>
                         <button
                           type="button"
-                          className={styles.tagRemoveBtn}
-                          onClick={() => handleRemoveAllowed(num)}
+                          className={styles.removeCustomerBtn}
+                          onClick={() => handleRemoveAllowed(cust.phone)}
+                          title="Remove customer from list"
                         >
                           ✕
                         </button>
-                      </span>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -594,7 +778,7 @@ export default function CheckoutControl() {
             </div>
 
             {/* Column 2: Always hide COD */}
-            <div className={styles.listCard}>
+            <div className={styles.listCard} ref={hideRef}>
               <div className={`${styles.listHeader} ${styles.listHeaderHide}`}>
                 <div className={`${styles.listIconBox} ${styles.iconBoxHide}`}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
@@ -604,25 +788,84 @@ export default function CheckoutControl() {
                 </div>
                 <div>
                   <h3 className={styles.listTitle}>Always hide COD</h3>
-                  <p className={styles.listSub}>Blocked customers</p>
+                  <p className={styles.listSub}>Blocked customers ({hiddenCustomers.length})</p>
                 </div>
               </div>
 
               <div className={styles.listBody}>
-                <form className={styles.inputRow} onSubmit={handleAddHidden}>
-                  <input
-                    type="tel"
-                    className={styles.phoneInput}
-                    placeholder="Enter phone number"
-                    value={hidePhoneInput}
-                    onChange={(e) => setHidePhoneInput(e.target.value)}
-                  />
+                <form className={styles.inputRow} onSubmit={handleAddHiddenSubmit}>
+                  <div className={styles.inputWrapper}>
+                    <input
+                      type="tel"
+                      className={styles.phoneInput}
+                      placeholder="Enter numeric customer phone number"
+                      value={hidePhoneInput}
+                      onChange={(e) => {
+                        // Enforce numeric contact numbers only (digits, +, spaces)
+                        const cleaned = e.target.value.replace(/[^0-9+ ]/g, "");
+                        setHidePhoneInput(cleaned);
+                        setShowHideDropdown(true);
+                        setHideError("");
+                      }}
+                      onFocus={() => {
+                        if (hidePhoneInput.trim()) setShowHideDropdown(true);
+                      }}
+                    />
+
+                    {/* Predictive suggestions dropdown for actual customers in database */}
+                    {showHideDropdown && hidePhoneInput.trim().length > 0 && (
+                      <div className={styles.suggestionDropdown}>
+                        {hideSuggestions.length === 0 ? (
+                          <div className={styles.suggestionEmpty}>
+                            No customer with phone matching &quot;{hidePhoneInput}&quot; found in database.
+                          </div>
+                        ) : (
+                          hideSuggestions.slice(0, 6).map((cust) => (
+                            <div
+                              key={cust.id}
+                              className={styles.suggestionItem}
+                              onClick={() => handleSelectHideCustomer(cust)}
+                            >
+                              <div className={styles.suggestionAvatar}>
+                                {cust.name.charAt(0).toUpperCase()}
+                              </div>
+                              <div className={styles.suggestionInfo}>
+                                <div className={styles.suggestionNameRow}>
+                                  <span className={styles.suggestionName}>{cust.name}</span>
+                                  <span className={styles.suggestionPhone}>{cust.phone}</span>
+                                </div>
+                                <div className={styles.suggestionMeta}>
+                                  {cust.city && <span>{cust.city} • </span>}
+                                  <span>{cust.ordersCount || 1} {cust.ordersCount === 1 ? "order" : "orders"}</span>
+                                  <span
+                                    className={`${styles.miniRiskBadge} ${
+                                      cust.riskLevel === "High"
+                                        ? styles.miniRiskHigh
+                                        : cust.riskLevel === "Medium"
+                                        ? styles.miniRiskMedium
+                                        : styles.miniRiskLow
+                                    }`}
+                                  >
+                                    {cust.riskLevel}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   <button type="submit" className={styles.btnAdd}>
                     Add
                   </button>
                 </form>
 
-                {hiddenNumbers.length === 0 ? (
+                {hideError && <div className={styles.inputErrorNotice}>⚠️ {hideError}</div>}
+
+                {/* Selected Blocked Customers Details Cards */}
+                {hiddenCustomers.length === 0 ? (
                   <div className={styles.emptyStateBox}>
                     <svg
                       className={styles.emptyIcon}
@@ -637,23 +880,43 @@ export default function CheckoutControl() {
                     <div>
                       <h4 className={styles.emptyTitle}>No numbers added yet</h4>
                       <p className={styles.emptySub}>
-                        Add phone numbers of customers to block.
+                        Add phone numbers of customers to block from database.
                       </p>
                     </div>
                   </div>
                 ) : (
-                  <div className={styles.tagList}>
-                    {hiddenNumbers.map((num) => (
-                      <span key={num} className={styles.phoneTag}>
-                        {num}
+                  <div className={styles.customerRowsList}>
+                    {hiddenCustomers.map((cust) => (
+                      <div key={cust.phone} className={styles.customerCardItem}>
+                        <div className={styles.customerAvatarHide}>
+                          {cust.name ? cust.name.charAt(0).toUpperCase() : "C"}
+                        </div>
+                        <div className={styles.customerDetails}>
+                          <div className={styles.customerHeaderLine}>
+                            <span className={styles.customerDisplayName}>{cust.name}</span>
+                            <span className={styles.customerPhoneBadge}>{cust.phone}</span>
+                            <span className={`${styles.riskPill} ${styles.pillHigh}`}>
+                              Blocked from COD
+                            </span>
+                          </div>
+                          <div className={styles.customerMetaLine}>
+                            {cust.email && <span>{cust.email} • </span>}
+                            {cust.city && <span>{cust.city} • </span>}
+                            <span>{cust.ordersCount || 1} orders</span>
+                            {cust.totalSpent > 0 && (
+                              <span> • ₹{Math.round(cust.totalSpent).toLocaleString("en-IN")} spent</span>
+                            )}
+                          </div>
+                        </div>
                         <button
                           type="button"
-                          className={styles.tagRemoveBtn}
-                          onClick={() => handleRemoveHidden(num)}
+                          className={styles.removeCustomerBtn}
+                          onClick={() => handleRemoveHidden(cust.phone)}
+                          title="Remove customer from blocklist"
                         >
                           ✕
                         </button>
-                      </span>
+                      </div>
                     ))}
                   </div>
                 )}
@@ -661,8 +924,8 @@ export default function CheckoutControl() {
             </div>
           </div>
 
-          {/* Info callout at bottom of Section 3 */}
-          <div className={styles.infoBox}>
+          {/* Info Callout Box */}
+          <div className={styles.infoBox} style={{ marginTop: 20 }}>
             <svg
               className={styles.infoIcon}
               viewBox="0 0 20 20"
@@ -680,13 +943,22 @@ export default function CheckoutControl() {
           </div>
         </div>
 
-        {/* Footer actions */}
+        {/* Footer Actions */}
         <div className={styles.footerRow}>
-          <Link to="/app" className={styles.btnCancel}>
+          <button
+            type="button"
+            className={styles.btnCancel}
+            onClick={() => navigate("/app")}
+          >
             Cancel
-          </Link>
-          <button type="button" className={styles.btnSave} onClick={handleSave}>
-            Save changes
+          </button>
+          <button
+            type="button"
+            className={styles.btnSave}
+            onClick={handleSave}
+            disabled={fetcher.state === "submitting"}
+          >
+            {fetcher.state === "submitting" ? "Saving..." : "Save changes"}
           </button>
         </div>
       </div>
