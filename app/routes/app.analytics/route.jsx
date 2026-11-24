@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useLoaderData, useFetcher, useSearchParams } from "react-router";
 import { authenticate } from "../../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
@@ -38,10 +38,30 @@ export default function AnalyticsRoute() {
   const [searchParams, setSearchParams] = useSearchParams();
   const fetcher = useFetcher();
 
-  // Date range dropdown state
+  // Date range dropdown state & click outside
+  const dropdownRef = useRef(null);
   const currentRange = searchParams.get("range") || loaderData.dateRange || "Last 30 days";
   const [dateRange, setDateRange] = useState(currentRange);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    const r = searchParams.get("range") || loaderData.dateRange || "Last 30 days";
+    setDateRange(r);
+  }, [searchParams, loaderData.dateRange]);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setIsDropdownOpen(false);
+      }
+    };
+    if (isDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isDropdownOpen]);
 
   // Average loss per failed COD order
   const [averageLoss, setAverageLoss] = useState(loaderData.averageLoss || 500);
@@ -69,7 +89,11 @@ export default function AnalyticsRoute() {
   const handleSelectDateRange = (opt) => {
     setDateRange(opt);
     setIsDropdownOpen(false);
-    setSearchParams({ range: opt });
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("range", opt);
+      return next;
+    });
   };
 
   const handleUpdateLoss = (e) => {
@@ -141,12 +165,23 @@ export default function AnalyticsRoute() {
   return (
     <s-page>
       <div className={styles.pageContainer}>
-        {/* Navigation Breadcrumb / Back Link */}
-        <div className={styles.backNavRow}>
-          <Link to="/app" className={styles.backLink}>
-            <span className={styles.backArrowIcon}>←</span> Back to dashboard
-          </Link>
-        </div>
+        {/* Back navigation */}
+        <Link
+          to="/app"
+          className={styles.backArrow}
+          aria-label="Back to dashboard"
+          title="Back to dashboard"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M19 12H5M5 12L12 19M5 12L12 5"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </Link>
 
         {/* Page Header */}
         <div className={styles.pageHeader}>
@@ -158,7 +193,7 @@ export default function AnalyticsRoute() {
           </div>
 
           <div className={styles.headerRight}>
-            <div className={styles.dateDropdownWrapper}>
+            <div className={styles.dateDropdownWrapper} ref={dropdownRef}>
               <button
                 type="button"
                 className={styles.dateDropdownBtn}

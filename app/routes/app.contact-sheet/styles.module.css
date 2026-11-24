@@ -552,13 +552,13 @@
 }
 
 .pageBtn {
-  min-width: 30px;
-  height: 30px;
-  padding: 0 6px;
-  border-radius: 6px;
-  border: 1px solid #e5e7eb;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
   background: #ffffff;
-  color: #374151;
+  color: #111827;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -569,14 +569,26 @@
   transition: all 0.15s ease;
 }
 
-.pageBtn:hover {
+.pageBtn:hover:not(:disabled) {
   background-color: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.pageBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .pageBtnActive {
   background: #004d26;
   color: #ffffff;
   border-color: #004d26;
+  box-shadow: 0 0 0 2px #005bd3;
+}
+
+.pageBtnActive:hover {
+  background: #003d1e;
+  border-color: #003d1e;
 }
 
 .emptyOrders {

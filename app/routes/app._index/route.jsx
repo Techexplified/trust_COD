@@ -61,6 +61,11 @@ export default function Dashboard() {
   const [isDateDropdownOpen, setIsDateDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
+  useEffect(() => {
+    const r = searchParams.get("range") || loaderData?.range || "Last 30 days";
+    setSelectedRange(r);
+  }, [searchParams, loaderData?.range]);
+
   // Sync checkout control / app embed status with DB
   useEffect(() => {
     if (loaderData?.appEmbedEnabled !== undefined) {
@@ -149,7 +154,11 @@ export default function Dashboard() {
   const handleSelectRange = (rangeKey) => {
     setSelectedRange(rangeKey);
     setIsDateDropdownOpen(false);
-    setSearchParams({ range: rangeKey });
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("range", rangeKey);
+      return next;
+    });
   };
 
   // Math for dynamic SVG Donut chart

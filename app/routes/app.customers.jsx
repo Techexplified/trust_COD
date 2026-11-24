@@ -60,6 +60,9 @@ export default function Customers() {
   const [searchQuery, setSearchQuery] = useState(loaderData.search || "");
   const [activeTab, setActiveTab] = useState(loaderData.risk || "all");
   const [openDropdownId, setOpenDropdownId] = useState(null);
+  const [activePage, setActivePage] = useState(
+    parseInt(searchParams.get("page") || String(loaderData.activePage || 1), 10)
+  );
 
   const customers = loaderData.customers || [];
   const stats = loaderData.stats || {
@@ -69,12 +72,23 @@ export default function Customers() {
     allowlisted: 0,
   };
 
+  const totalPages = loaderData.totalPages || 1;
+  const totalCount = loaderData.totalCount || customers.length;
+  const safeActivePage = Math.min(Math.max(1, activePage), totalPages);
+
+  useEffect(() => {
+    const p = parseInt(searchParams.get("page") || "1", 10);
+    setActivePage(p);
+  }, [searchParams]);
+
   const handleSelectTab = (tab) => {
     setActiveTab(tab);
+    setActivePage(1);
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       if (tab === "all") next.delete("risk");
       else next.set("risk", tab);
+      next.set("page", "1");
       return next;
     });
   };
@@ -86,11 +100,23 @@ export default function Customers() {
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
+    setActivePage(1);
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       if (!searchQuery.trim()) next.delete("search");
       else next.set("search", searchQuery.trim());
+      next.set("page", "1");
       return next;
+    });
+  };
+
+  const handlePageChange = (p) => {
+    const next = Math.max(1, Math.min(totalPages, p));
+    setActivePage(next);
+    setSearchParams((prev) => {
+      const nextParams = new URLSearchParams(prev);
+      nextParams.set("page", String(next));
+      return nextParams;
     });
   };
 
@@ -500,6 +526,114 @@ export default function Customers() {
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Pagination Footer */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "16px 20px",
+              borderTop: "1px solid #f1f5f9",
+              fontSize: 13,
+              color: "#64748b",
+            }}
+          >
+            <span>
+              Showing{" "}
+              {totalCount === 0
+                ? "0"
+                : `${(safeActivePage - 1) * 12 + 1} - ${Math.min(
+                    safeActivePage * 12,
+                    totalCount
+                  )}`}{" "}
+              of {totalCount} customers
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <button
+                type="button"
+                onClick={() => handlePageChange(safeActivePage - 1)}
+                disabled={safeActivePage <= 1}
+                aria-label="Previous page"
+                style={{
+                  minWidth: 32,
+                  height: 32,
+                  padding: "0 8px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  background: "#ffffff",
+                  color: "#111827",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: safeActivePage <= 1 ? "not-allowed" : "pointer",
+                  opacity: safeActivePage <= 1 ? 0.4 : 1,
+                  fontWeight: 500,
+                  fontSize: 13,
+                  fontFamily: "inherit",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                ‹
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => {
+                const isActive = safeActivePage === p;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => handlePageChange(p)}
+                    style={{
+                      minWidth: 32,
+                      height: 32,
+                      padding: "0 8px",
+                      borderRadius: 8,
+                      border: isActive ? "1px solid #004d26" : "1px solid #d1d5db",
+                      background: isActive ? "#004d26" : "#ffffff",
+                      color: isActive ? "#ffffff" : "#111827",
+                      boxShadow: isActive ? "0 0 0 2px #005bd3" : "none",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: "pointer",
+                      fontWeight: isActive ? 600 : 500,
+                      fontSize: 13,
+                      fontFamily: "inherit",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    {p}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => handlePageChange(safeActivePage + 1)}
+                disabled={safeActivePage >= totalPages}
+                aria-label="Next page"
+                style={{
+                  minWidth: 32,
+                  height: 32,
+                  padding: "0 8px",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  background: "#ffffff",
+                  color: "#111827",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: safeActivePage >= totalPages ? "not-allowed" : "pointer",
+                  opacity: safeActivePage >= totalPages ? 0.4 : 1,
+                  fontWeight: 500,
+                  fontSize: 13,
+                  fontFamily: "inherit",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                ›
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -77,9 +77,16 @@ export default function RiskOrders() {
 
   const [searchQuery, setSearchQuery] = useState(loaderData.searchQuery || "");
   const [openDropdownId, setOpenDropdownId] = useState(null);
-  const [activePage, setActivePage] = useState(loaderData.activePage || 1);
+  const [activePage, setActivePage] = useState(
+    parseInt(searchParams.get("page") || String(loaderData.activePage || 1), 10)
+  );
   const [orderActions, setOrderActions] = useState({});
   const [syncToast, setSyncToast] = useState("");
+
+  useEffect(() => {
+    const p = parseInt(searchParams.get("page") || "1", 10);
+    setActivePage(p);
+  }, [searchParams]);
 
   // Sync local action state from database loader data
   useEffect(() => {
@@ -101,9 +108,25 @@ export default function RiskOrders() {
   }, [fetcher.data]);
 
   const handleSelectRisk = (risk) => {
-    setSearchParams({ risk });
-    setOpenDropdownId(null);
     setActivePage(1);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("risk", risk);
+      next.set("page", "1");
+      return next;
+    });
+    setOpenDropdownId(null);
+  };
+
+  const handlePageChange = (p) => {
+    const totalP = loaderData.totalPages || 1;
+    const next = Math.max(1, Math.min(totalP, p));
+    setActivePage(next);
+    setSearchParams((prev) => {
+      const nextParams = new URLSearchParams(prev);
+      nextParams.set("page", String(next));
+      return nextParams;
+    });
   };
 
   const handleSelectAction = (orderId, actionName) => {
@@ -505,22 +528,31 @@ export default function RiskOrders() {
           {/* Pagination & Footer */}
           <div className={styles.paginationRow}>
             <span>
-              Showing {filteredOrders.length} of {counts[activeCategory]?.count || 0} orders
+              Showing{" "}
+              {counts[activeCategory]?.count === 0
+                ? "0"
+                : `${(Math.min(activePage, loaderData.totalPages || 1) - 1) * 8 + 1} - ${Math.min(
+                    Math.min(activePage, loaderData.totalPages || 1) * 8,
+                    counts[activeCategory]?.count || 0
+                  )}`}{" "}
+              of {counts[activeCategory]?.count || 0} orders
             </span>
             <div className={styles.paginationBtns}>
               <button
                 type="button"
                 className={styles.pageBtn}
-                onClick={() => setActivePage((p) => Math.max(1, p - 1))}
+                onClick={() => handlePageChange(activePage - 1)}
+                disabled={activePage <= 1}
+                aria-label="Previous page"
               >
                 ‹
               </button>
-              {Array.from({ length: Math.min(5, loaderData.totalPages || 1) }, (_, i) => i + 1).map((p) => (
+              {Array.from({ length: loaderData.totalPages || 1 }, (_, i) => i + 1).map((p) => (
                 <button
                   key={p}
                   type="button"
                   className={`${styles.pageBtn} ${activePage === p ? styles.pageBtnActive : ""}`}
-                  onClick={() => setActivePage(p)}
+                  onClick={() => handlePageChange(p)}
                 >
                   {p}
                 </button>
@@ -528,7 +560,9 @@ export default function RiskOrders() {
               <button
                 type="button"
                 className={styles.pageBtn}
-                onClick={() => setActivePage((p) => Math.min(loaderData.totalPages || 1, p + 1))}
+                onClick={() => handlePageChange(activePage + 1)}
+                disabled={activePage >= (loaderData.totalPages || 1)}
+                aria-label="Next page"
               >
                 ›
               </button>

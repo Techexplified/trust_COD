@@ -71,6 +71,21 @@ export default function ContactSheet() {
     });
   }, [orders, riskFilter, statusFilter]);
 
+  const PAGE_SIZE = 8;
+  const totalOrdersCount = filteredOrders.length;
+  const totalPages = Math.max(1, Math.ceil(totalOrdersCount / PAGE_SIZE));
+  const safeActivePage = Math.min(Math.max(1, activePage), totalPages);
+
+  const paginatedOrders = useMemo(() => {
+    const startIndex = (safeActivePage - 1) * PAGE_SIZE;
+    return filteredOrders.slice(startIndex, startIndex + PAGE_SIZE);
+  }, [filteredOrders, safeActivePage]);
+
+  const handlePageChange = (p) => {
+    const next = Math.max(1, Math.min(totalPages, p));
+    setActivePage(next);
+  };
+
   const handleSelectOutcome = (orderId, outcome) => {
     let newStatus = "Waiting for a call";
     if (outcome === "Confirmed") newStatus = "Confirmed";
@@ -256,21 +271,30 @@ export default function ContactSheet() {
             <button
               type="button"
               className={`${styles.filterPill} ${riskFilter === "all" ? styles.filterPillActive : ""}`}
-              onClick={() => setRiskFilter("all")}
+              onClick={() => {
+                setRiskFilter("all");
+                setActivePage(1);
+              }}
             >
               All ({allCount})
             </button>
             <button
               type="button"
               className={`${styles.filterPill} ${riskFilter === "high" ? styles.filterPillActive : ""}`}
-              onClick={() => setRiskFilter("high")}
+              onClick={() => {
+                setRiskFilter("high");
+                setActivePage(1);
+              }}
             >
               High risk ({highCount})
             </button>
             <button
               type="button"
               className={`${styles.filterPill} ${riskFilter === "medium" ? styles.filterPillActive : ""}`}
-              onClick={() => setRiskFilter("medium")}
+              onClick={() => {
+                setRiskFilter("medium");
+                setActivePage(1);
+              }}
             >
               Medium risk ({mediumCount})
             </button>
@@ -300,6 +324,7 @@ export default function ContactSheet() {
                     onClick={() => {
                       setStatusFilter(status);
                       setOpenStatusMenu(false);
+                      setActivePage(1);
                     }}
                   >
                     {status}
@@ -331,7 +356,7 @@ export default function ContactSheet() {
                     </td>
                   </tr>
                 ) : (
-                  filteredOrders.map((order) => (
+                  paginatedOrders.map((order) => (
                     <tr key={order.id} className={styles.tr}>
                       <td className={`${styles.td} ${styles.orderNum}`}>{order.id}</td>
                       <td className={`${styles.td} ${styles.orderPhone}`}>{order.phone}</td>
@@ -486,22 +511,33 @@ export default function ContactSheet() {
           {/* Pagination Footer */}
           <div className={styles.paginationRow}>
             <span>
-              Showing {filteredOrders.length} of {orders.length} orders
+              Showing{" "}
+              {totalOrdersCount === 0
+                ? "0"
+                : `${(safeActivePage - 1) * PAGE_SIZE + 1} - ${Math.min(
+                    safeActivePage * PAGE_SIZE,
+                    totalOrdersCount
+                  )}`}{" "}
+              of {totalOrdersCount} orders
             </span>
             <div className={styles.paginationBtns}>
               <button
                 type="button"
                 className={styles.pageBtn}
-                onClick={() => setActivePage((p) => Math.max(1, p - 1))}
+                onClick={() => handlePageChange(safeActivePage - 1)}
+                disabled={safeActivePage <= 1}
+                aria-label="Previous page"
               >
                 ‹
               </button>
-              {[1, 2, 3].map((p) => (
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
                 <button
                   key={p}
                   type="button"
-                  className={`${styles.pageBtn} ${activePage === p ? styles.pageBtnActive : ""}`}
-                  onClick={() => setActivePage(p)}
+                  className={`${styles.pageBtn} ${
+                    safeActivePage === p ? styles.pageBtnActive : ""
+                  }`}
+                  onClick={() => handlePageChange(p)}
                 >
                   {p}
                 </button>
@@ -509,7 +545,9 @@ export default function ContactSheet() {
               <button
                 type="button"
                 className={styles.pageBtn}
-                onClick={() => setActivePage((p) => Math.min(3, p + 1))}
+                onClick={() => handlePageChange(safeActivePage + 1)}
+                disabled={safeActivePage >= totalPages}
+                aria-label="Next page"
               >
                 ›
               </button>
