@@ -2,117 +2,9 @@ import prisma from "../db.server";
 import { getRulesForShop } from "./rules.server";
 import { evaluateOrderRisk } from "./riskEngine.server";
 
-// Sample customer & order seeds for initial empty states
-const SEED_CUSTOMERS = [
-  { id: "cust_1048", name: "Rahul Sharma", phone: "+91 98765 43210", email: "rahul.s98@example.com", ordersCount: 1, totalSpent: 1299, risk: "High", isBlocked: false, isAllowlisted: false, city: "Mumbai", zip: "400001" },
-  { id: "cust_1047", name: "Vikram Malhotra", phone: "+91 91234 56789", email: "vikram.m@example.com", ordersCount: 2, totalSpent: 2149, risk: "High", isBlocked: true, isAllowlisted: false, city: "Delhi", zip: "110001" },
-  { id: "cust_1046", name: "Pooja Gupta", phone: "+91 99887 66554", email: "pooja.g@example.com", ordersCount: 1, totalSpent: 1499, risk: "High", isBlocked: false, isAllowlisted: false, city: "Bengaluru", zip: "560001" },
-  { id: "cust_1045", name: "Amit Verma", phone: "+91 77654 32109", email: "amit.v@example.com", ordersCount: 3, totalSpent: 2899, risk: "High", isBlocked: false, isAllowlisted: false, city: "Pune", zip: "411001" },
-  { id: "cust_1044", name: "Sneha Patel", phone: "+91 88990 12345", email: "sneha.p@example.com", ordersCount: 1, totalSpent: 1199, risk: "High", isBlocked: false, isAllowlisted: false, city: "Ahmedabad", zip: "380001" },
-  { id: "cust_1043", name: "Kunal Singhania", phone: "+91 90123 45678", email: "kunal.s@example.com", ordersCount: 2, totalSpent: 1999, risk: "High", isBlocked: true, isAllowlisted: false, city: "Jaipur", zip: "302001" },
-  { id: "cust_1042", name: "Ananya Roy", phone: "+91 98712 34567", email: "ananya.r@example.com", ordersCount: 1, totalSpent: 1599, risk: "High", isBlocked: false, isAllowlisted: false, city: "Kolkata", zip: "700001" },
-  { id: "cust_1041", name: "Rohan Deshmukh", phone: "+91 91234 09876", email: "rohan.d@example.com", ordersCount: 1, totalSpent: 749, risk: "High", isBlocked: false, isAllowlisted: false, city: "Nagpur", zip: "440001" },
-  // Medium
-  { id: "cust_1040", name: "Deepak Yadav", phone: "+91 94567 12340", email: "deepak.y@example.com", ordersCount: 1, totalSpent: 1099, risk: "Medium", isBlocked: false, isAllowlisted: false, city: "Lucknow", zip: "226001" },
-  { id: "cust_1039", name: "Simran Kaur", phone: "+91 93210 98765", email: "simran.k@example.com", ordersCount: 2, totalSpent: 2600, risk: "Medium", isBlocked: false, isAllowlisted: false, city: "Chandigarh", zip: "160001" },
-  { id: "cust_1038", name: "Karthik Nair", phone: "+91 91122 33445", email: "karthik.n@example.com", ordersCount: 1, totalSpent: 850, risk: "Medium", isBlocked: false, isAllowlisted: false, city: "Kochi", zip: "682001" },
-  { id: "cust_1037", name: "Neha Joshi", phone: "+91 97788 99001", email: "neha.j@example.com", ordersCount: 2, totalSpent: 1820, risk: "Medium", isBlocked: false, isAllowlisted: false, city: "Indore", zip: "452001" },
-  // Low (Trusted)
-  { id: "cust_1032", name: "Priya Sundaram", phone: "+91 98877 66554", email: "priya.s@example.com", ordersCount: 4, totalSpent: 4200, risk: "Low", isBlocked: false, isAllowlisted: true, city: "Chennai", zip: "600001" },
-  { id: "cust_1031", name: "Manish Tiwari", phone: "+91 91234 56780", email: "manish.t@example.com", ordersCount: 3, totalSpent: 3500, risk: "Low", isBlocked: false, isAllowlisted: true, city: "Bhopal", zip: "462001" },
-  { id: "cust_1030", name: "Tanvi Agarwal", phone: "+91 97766 55443", email: "tanvi.a@example.com", ordersCount: 5, totalSpent: 6200, risk: "Low", isBlocked: false, isAllowlisted: true, city: "Surat", zip: "395001" },
-  { id: "cust_1029", name: "Arjun Reddy", phone: "+91 94455 66778", email: "arjun.r@example.com", ordersCount: 4, totalSpent: 5100, risk: "Low", isBlocked: false, isAllowlisted: true, city: "Hyderabad", zip: "500001" },
-];
-
-const SEED_ORDERS = [
-  // High risk
-  { orderNumber: "#1048", customerIndex: 0, totalPrice: 1299, risk: "High", reason: "Incomplete address", status: "Waiting for a call", daysAgo: 0 },
-  { orderNumber: "#1047", customerIndex: 1, totalPrice: 799, risk: "High", reason: "Repeat orders from same phone", status: "Waiting for a call", daysAgo: 0 },
-  { orderNumber: "#1046", customerIndex: 2, totalPrice: 1499, risk: "High", reason: "New customer, no history", status: "Waiting for a call", daysAgo: 1 },
-  { orderNumber: "#1045", customerIndex: 3, totalPrice: 699, risk: "High", reason: "COD refused previously", status: "Waiting for a call", daysAgo: 1 },
-  { orderNumber: "#1044", customerIndex: 4, totalPrice: 1199, risk: "High", reason: "Wrong or incomplete address", status: "Waiting for a call", daysAgo: 2 },
-  { orderNumber: "#1043", customerIndex: 5, totalPrice: 899, risk: "High", reason: "Multiple failed COD orders", status: "Waiting for a call", daysAgo: 2 },
-  { orderNumber: "#1042", customerIndex: 6, totalPrice: 1599, risk: "High", reason: "Suspicious pattern", status: "Waiting for a call", daysAgo: 3 },
-  { orderNumber: "#1041", customerIndex: 7, totalPrice: 749, risk: "High", reason: "Unreachable customer", status: "Waiting for a call", daysAgo: 3 },
-
-  // Medium risk
-  { orderNumber: "#1040", customerIndex: 8, totalPrice: 1099, risk: "Medium", reason: "First-time COD order", status: "Waiting for a call", daysAgo: 3 },
-  { orderNumber: "#1039", customerIndex: 9, totalPrice: 1350, risk: "Medium", reason: "High cart value for COD", status: "Waiting for a call", daysAgo: 4 },
-  { orderNumber: "#1038", customerIndex: 10, totalPrice: 850, risk: "Medium", reason: "Address pin code mismatch", status: "Waiting for a call", daysAgo: 4 },
-  { orderNumber: "#1037", customerIndex: 11, totalPrice: 620, risk: "Medium", reason: "Order placed late night", status: "Waiting for a call", daysAgo: 5 },
-
-  // Low risk
-  { orderNumber: "#1032", customerIndex: 12, totalPrice: 599, risk: "Low", reason: "Verified repeat buyer", status: "Confirmed", daysAgo: 7 },
-  { orderNumber: "#1031", customerIndex: 13, totalPrice: 1240, risk: "Low", reason: "Delivered previous 3 orders", status: "Confirmed", daysAgo: 8 },
-  { orderNumber: "#1030", customerIndex: 14, totalPrice: 899, risk: "Low", reason: "Complete address verified", status: "Confirmed", daysAgo: 8 },
-  { orderNumber: "#1029", customerIndex: 15, totalPrice: 450, risk: "Low", reason: "Regular customer", status: "Confirmed", daysAgo: 9 },
-];
-
-/**
- * Ensure database has customers and orders for this shop (seed if needed)
- */
+// Pure Shopify data integration - no sample data
 export async function ensureOrdersForShop(shop) {
-  const normalizedShop = shop || "default";
-  const count = await prisma.customer.count({
-    where: { shop: normalizedShop },
-  });
-
-  if (count === 0) {
-    const createdCustomers = [];
-    for (const c of SEED_CUSTOMERS) {
-      const dbCust = await prisma.customer.create({
-        data: {
-          shop: normalizedShop,
-          shopifyCustomerId: `gid://shopify/Customer/${c.id}`,
-          displayName: c.name,
-          firstName: c.name.split(" ")[0],
-          lastName: c.name.split(" ")[1] || "",
-          phone: c.phone,
-          email: c.email,
-          ordersCount: c.ordersCount,
-          totalSpent: c.totalSpent,
-          currency: "INR",
-          riskLevel: c.risk,
-          isBlocked: c.isBlocked,
-          isAllowlisted: c.isAllowlisted,
-          city: c.city,
-          zip: c.zip,
-          codOrdersCount: c.ordersCount,
-          codDeliveredCount: c.risk === "Low" ? c.ordersCount : 0,
-          codCancelledCount: c.isBlocked ? 2 : 0,
-        },
-      });
-      createdCustomers.push(dbCust);
-    }
-
-    const now = Date.now();
-    for (let idx = 0; idx < SEED_ORDERS.length; idx++) {
-      const seed = SEED_ORDERS[idx];
-      const assignedCust = createdCustomers[seed.customerIndex] || createdCustomers[0];
-      const orderDate = new Date(now - (seed.daysAgo || 0) * 86400000 - idx * 3600000);
-
-      await prisma.orderRisk.create({
-        data: {
-          shop: normalizedShop,
-          customerId: assignedCust.id,
-          shopifyCustomerId: assignedCust.shopifyCustomerId,
-          orderNumber: seed.orderNumber,
-          customerName: assignedCust.displayName,
-          customerPhone: assignedCust.phone,
-          customerEmail: assignedCust.email,
-          city: assignedCust.city,
-          pincode: assignedCust.zip,
-          totalPrice: seed.totalPrice,
-          currency: "INR",
-          risk: seed.risk,
-          reason: seed.reason,
-          status: seed.status || "Waiting for a call",
-          orderCreatedAt: orderDate,
-          createdAt: orderDate,
-        },
-      });
-    }
-  }
+  // Pure Shopify sync only — no sample or mock data
 }
 
 /**
@@ -122,7 +14,6 @@ export async function syncShopifyOrders(admin, shop) {
   const normalizedShop = shop || "default";
 
   if (!admin) {
-    await ensureOrdersForShop(normalizedShop);
     return;
   }
 
@@ -306,7 +197,6 @@ export async function syncShopifyOrders(admin, shop) {
     const edges = json?.data?.orders?.edges || [];
 
     if (edges.length === 0) {
-      await ensureOrdersForShop(normalizedShop);
       return;
     }
 
@@ -438,7 +328,6 @@ export async function syncShopifyOrders(admin, shop) {
     }
   } catch (err) {
     console.warn("Failed to fetch Shopify orders or customers, using database data:", err);
-    await ensureOrdersForShop(normalizedShop);
   }
 }
 
@@ -447,7 +336,6 @@ export async function syncShopifyOrders(admin, shop) {
  */
 export async function getCustomersForShop(shop, { search = "", risk = "all", page = 1, limit = 15 } = {}) {
   const normalizedShop = shop || "default";
-  await ensureOrdersForShop(normalizedShop);
 
   const where = { shop: normalizedShop };
 
@@ -656,7 +544,6 @@ export async function toggleCustomerAllow(shop, customerId, shouldAllow, admin =
  */
 export async function getRiskOrders(shop, { risk = "high", search = "", page = 1, limit = 8 }) {
   const normalizedShop = shop || "default";
-  await ensureOrdersForShop(normalizedShop);
 
   const activeCategory = ["low", "medium", "high"].includes(risk.toLowerCase())
     ? risk.charAt(0).toUpperCase() + risk.slice(1).toLowerCase()
@@ -669,11 +556,11 @@ export async function getRiskOrders(shop, { risk = "high", search = "", page = 1
     prisma.orderRisk.count({ where: { shop: normalizedShop, risk: "High" } }),
   ]);
 
-  const totalAll = totalLow + totalMed + totalHigh || 1;
+  const totalAll = totalLow + totalMed + totalHigh;
   const counts = {
-    low: { count: totalLow, percent: Math.round((totalLow / totalAll) * 100) },
-    medium: { count: totalMed, percent: Math.round((totalMed / totalAll) * 100) },
-    high: { count: totalHigh, percent: Math.round((totalHigh / totalAll) * 100) },
+    low: { count: totalLow, percent: totalAll > 0 ? Math.round((totalLow / totalAll) * 100) : 0 },
+    medium: { count: totalMed, percent: totalAll > 0 ? Math.round((totalMed / totalAll) * 100) : 0 },
+    high: { count: totalHigh, percent: totalAll > 0 ? Math.round((totalHigh / totalAll) * 100) : 0 },
   };
 
   const where = {
@@ -802,7 +689,6 @@ export async function updateOrderAction(shop, orderIdentifier, action, admin = n
  */
 export async function getContactSheetData(shop, { riskFilter = "all", statusFilter = "Waiting for a call" } = {}) {
   const normalizedShop = shop || "default";
-  await ensureOrdersForShop(normalizedShop);
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -909,7 +795,6 @@ export async function updateAppSettings(shop, data) {
  */
 export async function getAnalyticsData(shop, dateRange = "Last 30 days") {
   const normalizedShop = shop || "default";
-  await ensureOrdersForShop(normalizedShop);
   const settings = await getAppSettings(normalizedShop);
 
   const daysMap = {
@@ -948,7 +833,7 @@ export async function getAnalyticsData(shop, dateRange = "Last 30 days") {
     }
   }
 
-  const totalOrders = orders.length || 1;
+  const totalCount = orders.length;
   const avgLoss = settings.averageLoss || 500;
   const estimatedSavings = savedCount * avgLoss;
 
@@ -964,21 +849,19 @@ export async function getAnalyticsData(shop, dateRange = "Last 30 days") {
     const ptDate = new Date(startTime + i * stepTime);
     const dateLabel = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(ptDate);
 
+    // Filter orders belonging to this time bracket
     const bracketEnd = new Date(startTime + (i + 1) * stepTime);
     const bracketOrders = orders.filter((o) => {
       const t = new Date(o.orderCreatedAt).getTime();
       return t >= ptDate.getTime() && t < bracketEnd.getTime();
     });
 
-    const low = bracketOrders.filter((o) => o.risk === "Low").length || Math.max(1, Math.round(lowCount / 12));
-    const med = bracketOrders.filter((o) => o.risk === "Medium").length || Math.max(1, Math.round(medCount / 12));
-    const high = bracketOrders.filter((o) => o.risk === "High").length || Math.max(1, Math.round(highCount / 12));
+    const low = bracketOrders.filter((o) => o.risk === "Low").length;
+    const med = bracketOrders.filter((o) => o.risk === "Medium").length;
+    const high = bracketOrders.filter((o) => o.risk === "High").length;
     const savedInBracket = bracketOrders.filter((o) => o.status === "Cancelled" || o.action === "Cancelled").length;
 
     cumulativeSavings += (savedInBracket * avgLoss) / 1000;
-    if (cumulativeSavings === 0) {
-      cumulativeSavings = (i * avgLoss * 0.7) / 100;
-    }
 
     barData.push({ date: dateLabel, low, med, high });
     lineData.push({ date: dateLabel, val: parseFloat(cumulativeSavings.toFixed(1)) });
@@ -988,13 +871,13 @@ export async function getAnalyticsData(shop, dateRange = "Last 30 days") {
     dateRange,
     averageLoss: avgLoss,
     metrics: {
-      total: orders.length,
+      total: totalCount,
       low: lowCount,
-      lowPercent: Math.round((lowCount / totalOrders) * 100),
+      lowPercent: totalCount > 0 ? Math.round((lowCount / totalCount) * 100) : 0,
       med: medCount,
-      medPercent: Math.round((medCount / totalOrders) * 100),
+      medPercent: totalCount > 0 ? Math.round((medCount / totalCount) * 100) : 0,
       high: highCount,
-      highPercent: Math.round((highCount / totalOrders) * 100),
+      highPercent: totalCount > 0 ? Math.round((highCount / totalCount) * 100) : 0,
       confirmed: confirmedCount,
       saved: savedCount,
       estimatedSavings,
@@ -1009,7 +892,6 @@ export async function getAnalyticsData(shop, dateRange = "Last 30 days") {
  */
 export async function getDashboardData(shop, range = "Last 30 days") {
   const normalizedShop = shop || "default";
-  await ensureOrdersForShop(normalizedShop);
   const settings = await getAppSettings(normalizedShop);
 
   const daysMap = {
@@ -1027,19 +909,19 @@ export async function getDashboardData(shop, range = "Last 30 days") {
     prisma.orderRisk.count({ where: { shop: normalizedShop, risk: "High", orderCreatedAt: { gte: cutoff } } }),
   ]);
 
-  const total = totalLow + totalMed + totalHigh || 1;
+  const total = totalLow + totalMed + totalHigh;
 
   return {
     range,
     metrics: {
       label: range,
-      total: totalLow + totalMed + totalHigh,
+      total,
       low: totalLow,
-      lowPercent: Math.round((totalLow / total) * 100),
+      lowPercent: total > 0 ? Math.round((totalLow / total) * 100) : 0,
       med: totalMed,
-      medPercent: Math.round((totalMed / total) * 100),
+      medPercent: total > 0 ? Math.round((totalMed / total) * 100) : 0,
       high: totalHigh,
-      highPercent: Math.round((totalHigh / total) * 100),
+      highPercent: total > 0 ? Math.round((totalHigh / total) * 100) : 0,
     },
     appEmbedEnabled: settings.appEmbedEnabled,
   };

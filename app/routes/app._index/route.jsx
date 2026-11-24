@@ -31,48 +31,17 @@ export const action = async ({ request }) => {
   return null;
 };
 
-// Dynamic metrics for different date ranges
-const RANGE_METRICS = {
-  "Today": {
-    label: "Today",
-    total: 12,
-    low: 6,
-    lowPercent: 50,
-    med: 4,
-    medPercent: 33,
-    high: 2,
-    highPercent: 17,
-  },
-  "Last 7 days": {
-    label: "Last 7 days",
-    total: 58,
-    low: 28,
-    lowPercent: 48,
-    med: 19,
-    medPercent: 33,
-    high: 11,
-    highPercent: 19,
-  },
-  "Last 30 days": {
-    label: "Last 30 days",
-    total: 248,
-    low: 120,
-    lowPercent: 48,
-    med: 80,
-    medPercent: 32,
-    high: 48,
-    highPercent: 20,
-  },
-  "Last 90 days": {
-    label: "Last 90 days",
-    total: 720,
-    low: 350,
-    lowPercent: 49,
-    med: 230,
-    medPercent: 32,
-    high: 140,
-    highPercent: 19,
-  },
+const DATE_RANGES = ["Today", "Last 7 days", "Last 30 days", "Last 90 days"];
+
+const EMPTY_METRICS = {
+  label: "Last 30 days",
+  total: 0,
+  low: 0,
+  lowPercent: 0,
+  med: 0,
+  medPercent: 0,
+  high: 0,
+  highPercent: 0,
 };
 
 export default function Dashboard() {
@@ -184,7 +153,7 @@ export default function Dashboard() {
   };
 
   // Math for dynamic SVG Donut chart
-  const currentMetrics = loaderData?.metrics || RANGE_METRICS[selectedRange] || RANGE_METRICS["Last 30 days"];
+  const currentMetrics = loaderData?.metrics || { ...EMPTY_METRICS, label: selectedRange };
   const CIRCUMFERENCE = 471.24; // 2 * PI * 75
   const highDash = (currentMetrics.highPercent / 100) * CIRCUMFERENCE;
   const medDash = (currentMetrics.medPercent / 100) * CIRCUMFERENCE;
@@ -442,7 +411,7 @@ export default function Dashboard() {
 
               {isDateDropdownOpen && (
                 <div className={styles.dateDropdownMenu}>
-                  {Object.keys(RANGE_METRICS).map((rangeKey) => (
+                  {DATE_RANGES.map((rangeKey) => (
                     <button
                       key={rangeKey}
                       type="button"
