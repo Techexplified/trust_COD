@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, useLoaderData, useFetcher, useSearchParams } from "react-router";
+import { Link, useLoaderData, useFetcher, useSearchParams, useRouteError } from "react-router";
 import { authenticate } from "../../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { getAnalyticsData, updateAppSettings, syncShopifyOrders } from "../../services/orders.server";
@@ -872,7 +872,99 @@ export default function AnalyticsRoute() {
 }
 
 export function ErrorBoundary() {
-  return boundary.error();
+  const error = useRouteError();
+  if (error && (error.constructor?.name === "ErrorResponse" || error.constructor?.name === "ErrorResponseImpl")) {
+    return boundary.error(error);
+  }
+  return (
+    <s-page heading="Trust COD">
+      <div
+        style={{
+          maxWidth: 1100,
+          margin: "0 auto",
+          padding: "40px 20px",
+          textAlign: "center",
+          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+        }}
+      >
+        <div
+          style={{
+            background: "#ffffff",
+            border: "1px solid #fee2e2",
+            borderRadius: 12,
+            padding: "32px 24px",
+            maxWidth: 500,
+            margin: "0 auto",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+          }}
+        >
+          <div
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              background: "#fee2e2",
+              color: "#b91c1c",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              marginBottom: 16,
+            }}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: "#111827", margin: "0 0 8px" }}>
+            Unable to load analytics
+          </h2>
+          <p style={{ color: "#6b7280", fontSize: 14, margin: "0 0 20px", lineHeight: 1.5 }}>
+            {error?.message || "An unexpected error occurred while loading analytics data."}
+          </p>
+          <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+            <Link
+              to="/app"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "8px 16px",
+                background: "#f3f4f6",
+                color: "#374151",
+                textDecoration: "none",
+                borderRadius: 8,
+                fontWeight: 600,
+                fontSize: 13,
+              }}
+            >
+              Dashboard
+            </Link>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              style={{
+                padding: "8px 16px",
+                background: "#004d26",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: 8,
+                cursor: "pointer",
+                fontWeight: 600,
+                fontSize: 13,
+              }}
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    </s-page>
+  );
 }
 
 export const headers = (headersArgs) => {
