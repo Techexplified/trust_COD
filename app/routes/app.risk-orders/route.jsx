@@ -42,7 +42,7 @@ export const action = async ({ request }) => {
   }
 
   if (intent === "sync_orders") {
-    await syncShopifyOrders(admin, shop);
+    await syncShopifyOrders(admin, shop, { force: true });
     return { ok: true, synced: true };
   }
 

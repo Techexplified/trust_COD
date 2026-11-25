@@ -2,138 +2,169 @@ import prisma from "../db.server";
 import { getRulesForShop } from "./rules.server";
 import { evaluateOrderRisk } from "./riskEngine.server";
 
-// Pure Shopify data integration - no sample data
-export async function ensureOrdersForShop(shop) {
-  // Pure Shopify sync only — no sample or mock data
-}
+
+
+// In-memory sync throttle cache to prevent duplicate / excessive synchronous sync calls
+const syncThrottleMap = new Map();
+const inFlightSyncMap = new Map();
+const SYNC_THROTTLE_MS = 2 * 60 * 1000; // 2 minutes
 
 /**
  * Fetch and upsert Customers & Orders directly from Shopify GraphQL API
+ * Throttled to avoid blocking page navigation while keeping data fresh.
  */
-export async function syncShopifyOrders(admin, shop) {
+export async function syncShopifyOrders(admin, shop, { force = false } = {}) {
   const normalizedShop = shop || "default";
 
   if (!admin) {
     return;
   }
 
-  try {
-    const rules = await getRulesForShop(normalizedShop);
-    const settings = await getAppSettings(normalizedShop);
-    const blockedPhones = (settings.blockedPhones || "").split(",").map((p) => p.trim());
-    const blockedPincodes = (settings.blockedPincodes || "").split(",").map((p) => p.trim());
+  // If a sync is already running for this shop, reuse the active promise
+  if (inFlightSyncMap.has(normalizedShop)) {
+    return inFlightSyncMap.get(normalizedShop);
+  }
 
-    // 1. Fetch Customers from Shopify
+  // If recently synced and not forced, return immediately (sub-millisecond)
+  const lastSync = syncThrottleMap.get(normalizedShop);
+  if (!force && lastSync && Date.now() - lastSync < SYNC_THROTTLE_MS) {
+    return;
+  }
+
+  const syncPromise = (async () => {
     try {
-      const customersQuery = `#graphql
-        query GetShopifyCustomers {
-          customers(first: 50, sortKey: UPDATED_AT, reverse: true) {
-            edges {
-              node {
-                id
-                firstName
-                lastName
-                displayName
-                phone
-                email
-                numberOfOrders
-                amountSpent {
-                  amount
-                  currencyCode
-                }
-                defaultAddress {
-                  address1
-                  address2
-                  city
-                  province
-                  zip
-                  country
+      const [rules, settings] = await Promise.all([
+        getRulesForShop(normalizedShop),
+        getAppSettings(normalizedShop),
+      ]);
+
+      const blockedPhones = (settings.blockedPhones || "")
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean);
+      const blockedPincodes = (settings.blockedPincodes || "")
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      // 1. Fetch Customers from Shopify
+      try {
+        const customersQuery = `#graphql
+          query GetShopifyCustomers {
+            customers(first: 50, sortKey: UPDATED_AT, reverse: true) {
+              edges {
+                node {
+                  id
+                  firstName
+                  lastName
+                  displayName
                   phone
+                  email
+                  numberOfOrders
+                  amountSpent {
+                    amount
+                    currencyCode
+                  }
+                  defaultAddress {
+                    address1
+                    address2
+                    city
+                    province
+                    zip
+                    country
+                    phone
+                  }
+                  tags
                 }
-                tags
               }
             }
           }
+        `;
+
+        const custRes = await admin.graphql(customersQuery);
+        const custJson = await custRes.json();
+        const customerEdges = custJson?.data?.customers?.edges || [];
+
+        // Parallelize customer upserts in batches of 10
+        const CHUNK_SIZE = 10;
+        for (let i = 0; i < customerEdges.length; i += CHUNK_SIZE) {
+          const chunk = customerEdges.slice(i, i + CHUNK_SIZE);
+          await Promise.all(
+            chunk.map(async ({ node }) => {
+              const shopifyCustomerId = node.id;
+              const phone = node.phone || node.defaultAddress?.phone || "";
+              const email = node.email || "";
+              const displayName =
+                node.displayName || [node.firstName, node.lastName].filter(Boolean).join(" ") || "Customer";
+              const ordersCount = parseInt(node.numberOfOrders || "0", 10);
+              const totalSpent = parseFloat(node.amountSpent?.amount || "0");
+              const currency = node.amountSpent?.currencyCode || "INR";
+              const tags = (node.tags || []).join(", ");
+              const isBlocked = tags.includes("COD-Blocked") || (phone && blockedPhones.includes(phone));
+              const isAllowlisted = tags.includes("COD-Allowed");
+
+              let riskLevel = "Low";
+              if (isBlocked) {
+                riskLevel = "High";
+              } else if (ordersCount <= 1) {
+                riskLevel = "Medium";
+              }
+
+              return prisma.customer.upsert({
+                where: {
+                  shop_shopifyCustomerId: {
+                    shop: normalizedShop,
+                    shopifyCustomerId,
+                  },
+                },
+                update: {
+                  firstName: node.firstName,
+                  lastName: node.lastName,
+                  displayName,
+                  email,
+                  phone,
+                  ordersCount,
+                  totalSpent,
+                  currency,
+                  address1: node.defaultAddress?.address1,
+                  address2: node.defaultAddress?.address2,
+                  city: node.defaultAddress?.city,
+                  province: node.defaultAddress?.province,
+                  zip: node.defaultAddress?.zip,
+                  country: node.defaultAddress?.country,
+                  tags,
+                  isBlocked,
+                  isAllowlisted,
+                },
+                create: {
+                  shop: normalizedShop,
+                  shopifyCustomerId,
+                  firstName: node.firstName,
+                  lastName: node.lastName,
+                  displayName,
+                  email,
+                  phone,
+                  ordersCount,
+                  totalSpent,
+                  currency,
+                  address1: node.defaultAddress?.address1,
+                  address2: node.defaultAddress?.address2,
+                  city: node.defaultAddress?.city,
+                  province: node.defaultAddress?.province,
+                  zip: node.defaultAddress?.zip,
+                  country: node.defaultAddress?.country,
+                  tags,
+                  riskLevel,
+                  isBlocked,
+                  isAllowlisted,
+                },
+              });
+            })
+          );
         }
-      `;
-
-      const custRes = await admin.graphql(customersQuery);
-      const custJson = await custRes.json();
-      const customerEdges = custJson?.data?.customers?.edges || [];
-
-      for (const { node } of customerEdges) {
-        const shopifyCustomerId = node.id;
-        const phone = node.phone || node.defaultAddress?.phone || "";
-        const email = node.email || "";
-        const displayName = node.displayName || [node.firstName, node.lastName].filter(Boolean).join(" ") || "Customer";
-        const ordersCount = parseInt(node.numberOfOrders || "0", 10);
-        const totalSpent = parseFloat(node.amountSpent?.amount || "0");
-        const currency = node.amountSpent?.currencyCode || "INR";
-        const tags = (node.tags || []).join(", ");
-        const isBlocked = tags.includes("COD-Blocked") || (phone && blockedPhones.includes(phone));
-        const isAllowlisted = tags.includes("COD-Allowed");
-
-        // Determine risk level based on Shopify history
-        let riskLevel = "Low";
-        if (isBlocked) {
-          riskLevel = "High";
-        } else if (ordersCount <= 1) {
-          riskLevel = "Medium";
-        }
-
-        await prisma.customer.upsert({
-          where: {
-            shop_shopifyCustomerId: {
-              shop: normalizedShop,
-              shopifyCustomerId,
-            },
-          },
-          update: {
-            firstName: node.firstName,
-            lastName: node.lastName,
-            displayName,
-            email,
-            phone,
-            ordersCount,
-            totalSpent,
-            currency,
-            address1: node.defaultAddress?.address1,
-            address2: node.defaultAddress?.address2,
-            city: node.defaultAddress?.city,
-            province: node.defaultAddress?.province,
-            zip: node.defaultAddress?.zip,
-            country: node.defaultAddress?.country,
-            tags,
-            isBlocked,
-            isAllowlisted,
-          },
-          create: {
-            shop: normalizedShop,
-            shopifyCustomerId,
-            firstName: node.firstName,
-            lastName: node.lastName,
-            displayName,
-            email,
-            phone,
-            ordersCount,
-            totalSpent,
-            currency,
-            address1: node.defaultAddress?.address1,
-            address2: node.defaultAddress?.address2,
-            city: node.defaultAddress?.city,
-            province: node.defaultAddress?.province,
-            zip: node.defaultAddress?.zip,
-            country: node.defaultAddress?.country,
-            tags,
-            riskLevel,
-            isBlocked,
-            isAllowlisted,
-          },
-        });
+      } catch (custErr) {
+        console.warn("Shopify customers query failed, continuing with orders:", custErr);
       }
-    } catch (custErr) {
-      console.warn("Shopify customers query failed, continuing with orders:", custErr);
-    }
 
     // 2. Fetch Orders from Shopify
     const ordersQuery = `#graphql
@@ -200,7 +231,27 @@ export async function syncShopifyOrders(admin, shop) {
       return;
     }
 
-    for (const { node } of edges) {
+    // Query existing orders in a single bulk operation
+    const orderGids = edges.map((e) => e.node.id);
+    const existingOrders = await prisma.orderRisk.findMany({
+      where: { shop: normalizedShop, shopifyOrderId: { in: orderGids } },
+      select: { id: true, shopifyOrderId: true, action: true, risk: true },
+    });
+    const existingMap = new Map(existingOrders.map((o) => [o.shopifyOrderId, o]));
+
+    // Pre-fetch customer IDs
+    const customerGids = edges.map((e) => e.node.customer?.id).filter(Boolean);
+    const existingCustomers = await prisma.customer.findMany({
+      where: { shop: normalizedShop, shopifyCustomerId: { in: customerGids } },
+      select: { id: true, shopifyCustomerId: true },
+    });
+    const customerMap = new Map(existingCustomers.map((c) => [c.shopifyCustomerId, c.id]));
+
+    const CHUNK_SIZE = 10;
+    for (let i = 0; i < edges.length; i += CHUNK_SIZE) {
+      const chunk = edges.slice(i, i + CHUNK_SIZE);
+      await Promise.all(
+        chunk.map(async ({ node }) => {
       const shopifyOrderId = node.id;
       const orderNumber = node.name;
       const totalPrice = parseFloat(node.totalPriceSet?.shopMoney?.amount || 0);
@@ -218,59 +269,16 @@ export async function syncShopifyOrders(admin, shop) {
         node.displayFinancialStatus === "PENDING";
 
       if (!isCOD && edges.length > 5) {
-        continue;
+        return;
       }
 
-      // Upsert Customer if attached
-      let dbCustomerId = null;
-      let shopifyCustId = node.customer?.id || null;
-
-      if (shopifyCustId) {
-        const custOrdersCount = parseInt(node.customer?.numberOfOrders || "1", 10);
-        const custTotalSpent = parseFloat(node.customer?.amountSpent?.amount || String(totalPrice));
-
-        const upsertedCust = await prisma.customer.upsert({
-          where: {
-            shop_shopifyCustomerId: {
-              shop: normalizedShop,
-              shopifyCustomerId: shopifyCustId,
-            },
-          },
-          update: {
-            displayName: customerName,
-            phone: customerPhone || undefined,
-            email: customerEmail || undefined,
-            ordersCount: custOrdersCount,
-            totalSpent: custTotalSpent,
-            city: city || undefined,
-            zip: pincode || undefined,
-          },
-          create: {
-            shop: normalizedShop,
-            shopifyCustomerId: shopifyCustId,
-            firstName: node.customer?.firstName,
-            lastName: node.customer?.lastName,
-            displayName: customerName,
-            phone: customerPhone,
-            email: customerEmail,
-            ordersCount: custOrdersCount,
-            totalSpent: custTotalSpent,
-            currency,
-            city,
-            zip: pincode,
-          },
-        });
-        dbCustomerId = upsertedCust.id;
-      }
-
-      // Preserve existing merchant action if already reviewed
-      const existing = await prisma.orderRisk.findFirst({
-        where: { shop: normalizedShop, shopifyOrderId },
-      });
-
+      const existing = existingMap.get(shopifyOrderId);
       if (existing && existing.action) {
-        continue;
+        return;
       }
+
+      const shopifyCustId = node.customer?.id || null;
+      const dbCustomerId = shopifyCustId ? customerMap.get(shopifyCustId) || null : null;
 
       // Evaluate risk
       const assessment = evaluateOrderRisk(
@@ -326,32 +334,47 @@ export async function syncShopifyOrders(admin, shop) {
         },
       });
 
-      // Tag order in Shopify with risk tag
-      if (admin && shopifyOrderId) {
-        try {
-          const riskTag = assessment.risk === "High" ? "risk-high" : assessment.risk === "Medium" ? "risk-medium" : "risk-low";
-          await admin.graphql(
-            `#graphql
-            mutation TagOrderRiskOnSync($id: ID!, $tags: [String!]!) {
-              tagsAdd(id: $id, tags: $tags) {
-                userErrors { field message }
+              // Tag newly discovered order in Shopify
+              if (admin && !existing && shopifyOrderId) {
+                try {
+                  const riskTag =
+                    assessment.risk === "High"
+                      ? "risk-high"
+                      : assessment.risk === "Medium"
+                      ? "risk-medium"
+                      : "risk-low";
+                  await admin.graphql(
+                    `#graphql
+                    mutation TagOrderRiskOnSync($id: ID!, $tags: [String!]!) {
+                      tagsAdd(id: $id, tags: $tags) {
+                        userErrors { field message }
+                      }
+                    }`,
+                    {
+                      variables: {
+                        id: shopifyOrderId,
+                        tags: [riskTag, `TrustCOD-${assessment.risk}`],
+                      },
+                    }
+                  );
+                } catch (tagErr) {
+                  // Silently ignore tagging errors
+                }
               }
-            }`,
-            {
-              variables: {
-                id: shopifyOrderId,
-                tags: [riskTag, `TrustCOD-${assessment.risk}`],
-              },
-            }
+            })
           );
-        } catch (tagErr) {
-          console.warn("Could not tag order on sync:", tagErr);
         }
-      }
+
+      syncThrottleMap.set(normalizedShop, Date.now());
+    } catch (err) {
+      console.warn("Failed to fetch Shopify orders or customers, using database data:", err);
+    } finally {
+      inFlightSyncMap.delete(normalizedShop);
     }
-  } catch (err) {
-    console.warn("Failed to fetch Shopify orders or customers, using database data:", err);
-  }
+  })();
+
+  inFlightSyncMap.set(normalizedShop, syncPromise);
+  return syncPromise;
 }
 
 /**
