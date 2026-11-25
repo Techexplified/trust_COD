@@ -325,6 +325,29 @@ export async function syncShopifyOrders(admin, shop) {
           orderCreatedAt,
         },
       });
+
+      // Tag order in Shopify with risk tag
+      if (admin && shopifyOrderId) {
+        try {
+          const riskTag = assessment.risk === "High" ? "risk-high" : assessment.risk === "Medium" ? "risk-medium" : "risk-low";
+          await admin.graphql(
+            `#graphql
+            mutation TagOrderRiskOnSync($id: ID!, $tags: [String!]!) {
+              tagsAdd(id: $id, tags: $tags) {
+                userErrors { field message }
+              }
+            }`,
+            {
+              variables: {
+                id: shopifyOrderId,
+                tags: [riskTag, `TrustCOD-${assessment.risk}`],
+              },
+            }
+          );
+        } catch (tagErr) {
+          console.warn("Could not tag order on sync:", tagErr);
+        }
+      }
     }
   } catch (err) {
     console.warn("Failed to fetch Shopify orders or customers, using database data:", err);
@@ -447,14 +470,20 @@ export async function toggleCustomerBlock(shop, customerId, shouldBlock, admin =
     });
   }
 
-  // Tag customer in Shopify if connected
+  // Tag customer and set COD allowed metafield in Shopify if connected
   if (admin && customer.shopifyCustomerId) {
     try {
       if (shouldBlock) {
         await admin.graphql(
           `#graphql
-          mutation TagCustomer($id: ID!, $tags: [String!]!) {
+          mutation TagAndSetBlockedCustomer($id: ID!, $tags: [String!]!, $metafields: [MetafieldsSetInput!]!) {
             tagsAdd(id: $id, tags: $tags) {
+              userErrors { field message }
+            }
+            tagsRemove(id: $id, tags: ["COD-Allowed"]) {
+              userErrors { field message }
+            }
+            metafieldsSet(metafields: $metafields) {
               userErrors { field message }
             }
           }`,
@@ -462,14 +491,26 @@ export async function toggleCustomerBlock(shop, customerId, shouldBlock, admin =
             variables: {
               id: customer.shopifyCustomerId,
               tags: ["COD-Blocked", "TrustCOD-Flagged"],
+              metafields: [
+                {
+                  ownerId: customer.shopifyCustomerId,
+                  namespace: "trust_cod",
+                  key: "cod_allowed",
+                  value: "false",
+                  type: "single_line_text_field",
+                },
+              ],
             },
           }
         );
       } else {
         await admin.graphql(
           `#graphql
-          mutation RemoveCustomerTag($id: ID!, $tags: [String!]!) {
+          mutation RemoveCustomerBlock($id: ID!, $tags: [String!]!, $metafields: [MetafieldsSetInput!]!) {
             tagsRemove(id: $id, tags: $tags) {
+              userErrors { field message }
+            }
+            metafieldsSet(metafields: $metafields) {
               userErrors { field message }
             }
           }`,
@@ -477,12 +518,21 @@ export async function toggleCustomerBlock(shop, customerId, shouldBlock, admin =
             variables: {
               id: customer.shopifyCustomerId,
               tags: ["COD-Blocked"],
+              metafields: [
+                {
+                  ownerId: customer.shopifyCustomerId,
+                  namespace: "trust_cod",
+                  key: "cod_allowed",
+                  value: "true",
+                  type: "single_line_text_field",
+                },
+              ],
             },
           }
         );
       }
     } catch (err) {
-      console.warn("Could not update customer tags in Shopify:", err);
+      console.warn("Could not update customer tags/metafield in Shopify:", err);
     }
   }
 
@@ -515,22 +565,44 @@ export async function toggleCustomerAllow(shop, customerId, shouldAllow, admin =
 
   if (admin && customer.shopifyCustomerId) {
     try {
-      const tagMutation = shouldAllow
-        ? `#graphql
-          mutation TagCustomer($id: ID!, $tags: [String!]!) {
+      if (shouldAllow) {
+        await admin.graphql(
+          `#graphql
+          mutation AllowCustomerCod($id: ID!, $tags: [String!]!, $metafields: [MetafieldsSetInput!]!) {
             tagsAdd(id: $id, tags: $tags) { userErrors { field message } }
-          }`
-        : `#graphql
-          mutation RemoveCustomerTag($id: ID!, $tags: [String!]!) {
+            tagsRemove(id: $id, tags: ["COD-Blocked"]) { userErrors { field message } }
+            metafieldsSet(metafields: $metafields) { userErrors { field message } }
+          }`,
+          {
+            variables: {
+              id: customer.shopifyCustomerId,
+              tags: ["COD-Allowed"],
+              metafields: [
+                {
+                  ownerId: customer.shopifyCustomerId,
+                  namespace: "trust_cod",
+                  key: "cod_allowed",
+                  value: "true",
+                  type: "single_line_text_field",
+                },
+              ],
+            },
+          }
+        );
+      } else {
+        await admin.graphql(
+          `#graphql
+          mutation RemoveCustomerAllow($id: ID!, $tags: [String!]!) {
             tagsRemove(id: $id, tags: $tags) { userErrors { field message } }
-          }`;
-
-      await admin.graphql(tagMutation, {
-        variables: {
-          id: customer.shopifyCustomerId,
-          tags: ["COD-Allowed"],
-        },
-      });
+          }`,
+          {
+            variables: {
+              id: customer.shopifyCustomerId,
+              tags: ["COD-Allowed"],
+            },
+          }
+        );
+      }
     } catch (err) {
       console.warn("Could not tag customer allowlist in Shopify:", err);
     }
@@ -632,17 +704,24 @@ export async function updateOrderAction(shop, orderIdentifier, action, admin = n
   let updatedStatus = order.status;
   let updatedRisk = order.risk;
   let updatedReason = order.reason;
+  let tagsToAdd = [];
+  let tagsToRemove = [];
 
   if (action === "Confirmed") {
     updatedStatus = "Confirmed";
+    tagsToAdd = ["confirmed", "COD-Confirmed", "TrustCOD-Reviewed"];
   } else if (action === "Cancelled") {
     updatedStatus = "Cancelled";
+    tagsToAdd = ["cancelled", "COD-Cancelled", "TrustCOD-Reviewed"];
   } else if (action === "Unreachable") {
     updatedStatus = "Unreachable";
+    tagsToAdd = ["unreachable", "COD-Unreachable"];
   } else if (action === "Mark safe") {
     updatedRisk = "Low";
     updatedStatus = "Confirmed";
     updatedReason = "Marked safe by merchant";
+    tagsToAdd = ["risk-low", "safe", "COD-Safe"];
+    tagsToRemove = ["risk-high", "risk-medium", "COD-High-Risk", "COD-Medium-Risk", "TrustCOD-Flagged"];
   }
 
   const updated = await prisma.orderRisk.update({
@@ -652,30 +731,87 @@ export async function updateOrderAction(shop, orderIdentifier, action, admin = n
       status: updatedStatus,
       risk: updatedRisk,
       reason: updatedReason,
+      riskScore: action === "Mark safe" ? 0 : order.riskScore,
     },
   });
+
+  // If Mark safe, unblock customer in database and Shopify
+  if (action === "Mark safe" && order.customerId) {
+    try {
+      await prisma.customer.update({
+        where: { id: order.customerId },
+        data: { riskLevel: "Low", isBlocked: false },
+      });
+      if (admin && order.shopifyCustomerId) {
+        await admin.graphql(
+          `#graphql
+          mutation UnblockCustomerOnMarkSafe($id: ID!, $tags: [String!]!, $metafields: [MetafieldsSetInput!]!) {
+            tagsRemove(id: $id, tags: $tags) { userErrors { field message } }
+            metafieldsSet(metafields: $metafields) { userErrors { field message } }
+          }`,
+          {
+            variables: {
+              id: order.shopifyCustomerId,
+              tags: ["COD-Blocked"],
+              metafields: [
+                {
+                  ownerId: order.shopifyCustomerId,
+                  namespace: "trust_cod",
+                  key: "cod_allowed",
+                  value: "true",
+                  type: "single_line_text_field",
+                },
+              ],
+            },
+          }
+        );
+      }
+    } catch (custErr) {
+      console.warn("Could not unblock customer on mark safe:", custErr);
+    }
+  }
 
   // Tag order in Shopify if connected
   if (admin && order.shopifyOrderId) {
     try {
-      const tag = `COD-${action.replace(/\s+/g, "-")}`;
-      await admin.graphql(
-        `#graphql
-        mutation AddOrderTag($id: ID!, $tags: [String!]!) {
-          tagsAdd(id: $id, tags: $tags) {
-            userErrors {
-              field
-              message
+      if (tagsToAdd.length > 0) {
+        await admin.graphql(
+          `#graphql
+          mutation AddOrderTag($id: ID!, $tags: [String!]!) {
+            tagsAdd(id: $id, tags: $tags) {
+              userErrors {
+                field
+                message
+              }
             }
+          }`,
+          {
+            variables: {
+              id: order.shopifyOrderId,
+              tags: tagsToAdd,
+            },
           }
-        }`,
-        {
-          variables: {
-            id: order.shopifyOrderId,
-            tags: [tag, "TrustCOD-Reviewed"],
-          },
-        }
-      );
+        );
+      }
+      if (tagsToRemove.length > 0) {
+        await admin.graphql(
+          `#graphql
+          mutation RemoveOrderTags($id: ID!, $tags: [String!]!) {
+            tagsRemove(id: $id, tags: $tags) {
+              userErrors {
+                field
+                message
+              }
+            }
+          }`,
+          {
+            variables: {
+              id: order.shopifyOrderId,
+              tags: tagsToRemove,
+            },
+          }
+        );
+      }
     } catch (err) {
       console.warn("Could not tag order in Shopify:", err);
     }
@@ -690,10 +826,7 @@ export async function updateOrderAction(shop, orderIdentifier, action, admin = n
 export async function getContactSheetData(shop, { riskFilter = "all", statusFilter = "Waiting for a call" } = {}) {
   const normalizedShop = shop || "default";
 
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-
-  const [waitingCount, confirmedTodayCount, cancelledCount, allEligible] = await Promise.all([
+  const [waitingCount, confirmedCount, cancelledOrUnreachableCount, allEligible] = await Promise.all([
     prisma.orderRisk.count({
       where: {
         shop: normalizedShop,
@@ -705,13 +838,12 @@ export async function getContactSheetData(shop, { riskFilter = "all", statusFilt
       where: {
         shop: normalizedShop,
         status: "Confirmed",
-        updatedAt: { gte: todayStart },
       },
     }),
     prisma.orderRisk.count({
       where: {
         shop: normalizedShop,
-        status: "Cancelled",
+        status: { in: ["Cancelled", "Unreachable"] },
       },
     }),
     prisma.orderRisk.findMany({
@@ -724,23 +856,15 @@ export async function getContactSheetData(shop, { riskFilter = "all", statusFilt
     }),
   ]);
 
-  const filtered = allEligible.filter((order) => {
-    if (riskFilter === "high" && order.risk !== "High") return false;
-    if (riskFilter === "medium" && order.risk !== "Medium") return false;
-
-    if (statusFilter !== "All statuses" && order.status !== statusFilter) {
-      return false;
-    }
-    return true;
-  });
-
   return {
     summary: {
       waitingForCall: waitingCount,
-      confirmedToday: confirmedTodayCount,
-      cancelledSaved: cancelledCount,
+      confirmed: confirmedCount,
+      confirmedToday: confirmedCount,
+      cancelledSaved: cancelledOrUnreachableCount,
+      cancelledOrUnreachable: cancelledOrUnreachableCount,
     },
-    orders: filtered.map((o) => ({
+    orders: allEligible.map((o) => ({
       id: o.orderNumber,
       dbId: o.id,
       phone: o.customerPhone || o.customer?.phone || "—",

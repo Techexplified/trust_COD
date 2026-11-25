@@ -1,9 +1,21 @@
 import { useState, useMemo, useEffect } from "react";
-import { Link, useLoaderData, useFetcher } from "react-router";
+import { Link, useLoaderData, useFetcher, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../../shopify.server";
 import { getContactSheetData, updateOrderAction, syncShopifyOrders } from "../../services/orders.server";
 import styles from "./styles.module.css";
+
+function formatPhone(phone) {
+  if (!phone || phone === "—") return "—";
+  const cleaned = phone.replace(/[^\d+]/g, "");
+  if (cleaned.startsWith("+91") && cleaned.length === 13) {
+    return `+91 ${cleaned.slice(3, 8)} ${cleaned.slice(8)}`;
+  }
+  if (cleaned.length === 10) {
+    return `+91 ${cleaned.slice(0, 5)} ${cleaned.slice(5)}`;
+  }
+  return phone;
+}
 
 export const loader = async ({ request }) => {
   const { session, admin } = await authenticate.admin(request);
@@ -33,10 +45,10 @@ export const action = async ({ request }) => {
 };
 
 export default function ContactSheet() {
-  const loaderData = useLoaderData();
+  const loaderData = useLoaderData() || {};
   const fetcher = useFetcher();
 
-  const [orders, setOrders] = useState(loaderData.orders || []);
+  const [orders, setOrders] = useState(loaderData?.orders || []);
   const [riskFilter, setRiskFilter] = useState("all"); // "all" | "high" | "medium"
   const [statusFilter, setStatusFilter] = useState("Waiting for a call"); // "All statuses" | "Waiting for a call" | "Confirmed" | "Cancelled" | "Unreachable"
   const [openStatusMenu, setOpenStatusMenu] = useState(false);
@@ -45,10 +57,10 @@ export default function ContactSheet() {
 
   // Sync state if loader re-runs
   useEffect(() => {
-    if (loaderData.orders) {
+    if (loaderData?.orders) {
       setOrders(loaderData.orders);
     }
-  }, [loaderData.orders]);
+  }, [loaderData?.orders]);
 
   // Dynamic filter counts
   const highCount = useMemo(() => orders.filter((o) => o.risk === "High").length, [orders]);
@@ -63,8 +75,15 @@ export default function ContactSheet() {
       if (riskFilter === "medium" && order.risk !== "Medium") return false;
 
       // Status filter
-      if (statusFilter !== "All statuses" && order.status !== statusFilter) {
-        return false;
+      if (statusFilter !== "All statuses") {
+        if (statusFilter === "Waiting for a call") {
+          // Unreachable stays visible so the team can try again later (per spec)
+          if (order.status !== "Waiting for a call" && order.status !== "Unreachable") {
+            return false;
+          }
+        } else if (order.status !== statusFilter) {
+          return false;
+        }
       }
 
       return true;
@@ -131,11 +150,19 @@ export default function ContactSheet() {
     document.body.removeChild(link);
   };
 
-  const summary = loaderData.summary || {
-    waitingForCall: 0,
-    confirmedToday: 0,
-    cancelledSaved: 0,
-  };
+  // Dynamic live counts for summary cards
+  const waitingForCallCount = useMemo(
+    () => orders.filter((o) => (o.status === "Waiting for a call" || !o.status) && (o.risk === "High" || o.risk === "Medium")).length,
+    [orders]
+  );
+  const confirmedCount = useMemo(
+    () => orders.filter((o) => o.status === "Confirmed").length,
+    [orders]
+  );
+  const cancelledOrUnreachableCount = useMemo(
+    () => orders.filter((o) => o.status === "Cancelled" || o.status === "Unreachable").length,
+    [orders]
+  );
 
   return (
     <s-page heading="Trust COD">
@@ -163,7 +190,7 @@ export default function ContactSheet() {
           <div className={styles.headerText}>
             <h1 className={styles.title}>Contact sheet</h1>
             <p className={styles.subtitle}>
-              High and medium risk COD orders from your store to confirm before shipping.
+              High and medium risk COD orders to confirm before shipping.
             </p>
           </div>
 
@@ -217,7 +244,7 @@ export default function ContactSheet() {
             </div>
             <div className={styles.summaryContent}>
               <h4 className={styles.summaryLabel}>Waiting for a call</h4>
-              <p className={styles.summaryValue}>{summary.waitingForCall}</p>
+              <p className={styles.summaryValue}>{waitingForCallCount}</p>
               <p className={styles.summarySub}>COD orders</p>
             </div>
           </div>
@@ -238,7 +265,7 @@ export default function ContactSheet() {
             </div>
             <div className={styles.summaryContent}>
               <h4 className={styles.summaryLabel}>Confirmed</h4>
-              <p className={styles.summaryValue}>{summary.confirmedToday}</p>
+              <p className={styles.summaryValue}>{confirmedCount}</p>
               <p className={styles.summarySub}>COD orders</p>
             </div>
           </div>
@@ -257,8 +284,8 @@ export default function ContactSheet() {
               </svg>
             </div>
             <div className={styles.summaryContent}>
-              <h4 className={styles.summaryLabel}>Cancelled / saved</h4>
-              <p className={styles.summaryValue}>{summary.cancelledSaved}</p>
+              <h4 className={styles.summaryLabel}>Cancelled or unreachable</h4>
+              <p className={styles.summaryValue}>{cancelledOrUnreachableCount}</p>
               <p className={styles.summarySub}>COD orders</p>
             </div>
           </div>
@@ -343,15 +370,16 @@ export default function ContactSheet() {
                 <tr>
                   <th className={styles.th}>Order</th>
                   <th className={styles.th}>Customer phone</th>
-                  <th className={styles.th}>Risk and reason</th>
+                  <th className={styles.th}>Risk</th>
+                  <th className={styles.th}>Reason</th>
                   <th className={styles.th}>Status</th>
-                  <th className={`${styles.th} ${styles.actionCell}`}>Log call outcome</th>
+                  <th className={`${styles.th} ${styles.actionCell}`}>Call outcome</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredOrders.length === 0 ? (
                   <tr>
-                    <td colSpan="5" className={styles.emptyRow}>
+                    <td colSpan="6" className={styles.emptyRow}>
                       No orders matching selected risk and status filters.
                     </td>
                   </tr>
@@ -359,18 +387,20 @@ export default function ContactSheet() {
                   paginatedOrders.map((order) => (
                     <tr key={order.id} className={styles.tr}>
                       <td className={`${styles.td} ${styles.orderNum}`}>{order.id}</td>
-                      <td className={`${styles.td} ${styles.orderPhone}`}>{order.phone}</td>
+                      <td className={`${styles.td} ${styles.orderPhone}`}>
+                        {formatPhone(order.phone)}
+                      </td>
                       <td className={styles.td}>
-                        <div className={styles.riskCell}>
-                          <span
-                            className={`${styles.riskBadge} ${
-                              order.risk === "High" ? styles.badgeHigh : styles.badgeMedium
-                            }`}
-                          >
-                            {order.risk}
-                          </span>
-                          <span className={styles.reasonText}>{order.reason}</span>
-                        </div>
+                        <span
+                          className={`${styles.riskBadge} ${
+                            order.risk === "High" ? styles.badgeHigh : styles.badgeMedium
+                          }`}
+                        >
+                          {order.risk}
+                        </span>
+                      </td>
+                      <td className={`${styles.td} ${styles.reasonText}`}>
+                        {order.reason || "Review required"}
                       </td>
                       <td className={styles.td}>
                         <span
@@ -552,6 +582,102 @@ export default function ContactSheet() {
                 ›
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+    </s-page>
+  );
+}
+
+export function ErrorBoundary() {
+  const error = useRouteError();
+  if (error && (error.constructor?.name === "ErrorResponse" || error.constructor?.name === "ErrorResponseImpl")) {
+    return boundary.error(error);
+  }
+  return (
+    <s-page heading="Trust COD">
+      <div
+        style={{
+          maxWidth: 1100,
+          margin: "0 auto",
+          padding: "40px 20px",
+          textAlign: "center",
+          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+        }}
+      >
+        <div
+          style={{
+            background: "#ffffff",
+            border: "1px solid #fee2e2",
+            borderRadius: 12,
+            padding: "32px 24px",
+            maxWidth: 500,
+            margin: "0 auto",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+          }}
+        >
+          <div
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: "50%",
+              background: "#fee2e2",
+              color: "#b91c1c",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              marginBottom: 16,
+            }}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: "#111827", margin: "0 0 8px" }}>
+            Unable to load contact sheet
+          </h2>
+          <p style={{ color: "#6b7280", fontSize: 14, margin: "0 0 20px", lineHeight: 1.5 }}>
+            {error?.message || "An unexpected error occurred while loading contact sheet orders."}
+          </p>
+          <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+            <Link
+              to="/app"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "8px 16px",
+                background: "#f3f4f6",
+                color: "#374151",
+                textDecoration: "none",
+                borderRadius: 8,
+                fontWeight: 600,
+                fontSize: 13,
+              }}
+            >
+              Dashboard
+            </Link>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              style={{
+                padding: "8px 16px",
+                background: "#004d26",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: 8,
+                cursor: "pointer",
+                fontWeight: 600,
+                fontSize: 13,
+              }}
+            >
+              Retry
+            </button>
           </div>
         </div>
       </div>
