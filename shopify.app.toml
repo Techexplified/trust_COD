@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "44dd3488b2f511a65e667679869e8682"
-name = "first_app"
+name = "Trust COD"
 application_url = "https://example.com"
 embedded = true
 
