@@ -2,7 +2,7 @@
 
 client_id = "44dd3488b2f511a65e667679869e8682"
 name = "Trust COD"
-application_url = "https://example.com"
+application_url = "https://trust-cod-livid.vercel.app"
 embedded = true
 
 [access_scopes]
